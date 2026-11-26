@@ -8,6 +8,8 @@ const fuente = fs.readFileSync(require('node:path').join(__dirname, '../apps-scr
 function entorno({ activo = 'SI', conStock = true } = {}) {
   const tablas = {
     PRODUCTOS: [['PRODUCTO_ID','NOMBRE','ACTIVO'], ['FL-001','Jabón ficticio',activo]],
+    CLIENTES: [['CLIENTE_ID','NOMBRE','CONSENTIMIENTO_CONTACTO'], ['CLI-01','Cliente ficticio','SI'], ['CLI-02','Sin permiso','NO']],
+    ACTIVIDADES_CLIENTE: [['ACTIVIDAD_ID','CLIENTE_ID','FECHA','TIPO','REFERENCIA_ID','DETALLE','PROXIMO_CONTACTO']],
     INSUMOS: [['INSUMO_ID','NOMBRE','UNIDAD'], ['IN-001','Base','g'],['IN-002','Envase','unidad']],
     RECETAS: [['PRODUCTO_ID','RENDIMIENTO','INSUMO_ID','CANTIDAD','UNIDAD'],['FL-001',2,'IN-001',80,'g'],['FL-001',2,'IN-002',2,'unidad']],
     EVENTOS_STOCK: [['REQUEST_ID','FECHA','TIPO','DATOS_JSON','RESULTADO_JSON']],
@@ -164,4 +166,34 @@ test('no permite reutilizar un identificador de lote de producción', () => {
   const e=entorno();
   agregarLote(e,'LOTE-01',1,'2027-02-01');
   assert.throws(()=>e.api.FLORA_registrarProduccion(orden()),/LOTE_ID ya existe/);
+});
+
+test('la venta se consulta en el CRM una sola vez y sin escribir actividades duplicadas', () => {
+  const e=entorno({conStock:false});
+  agregarLote(e,'L-CRM',5,'2027-02-01');
+  const o={requestId:'VENTA-CRM-01',productoId:'FL-001',cantidad:2,clienteId:'CLI-01',confirmado:true};
+  assert.equal(e.api.FLORA_registrarVenta(o).registrada,true);
+  assert.equal(e.api.FLORA_registrarVenta(o).duplicada,true);
+  const h=e.api.FLORA_historialCliente('CLI-01');
+  assert.equal(h.actividades.length,1);
+  assert.equal(h.actividades[0].referenciaId,'VENTA-CRM-01');
+  assert.equal(e.tablas.ACTIVIDADES_CLIENTE.length,1);
+});
+
+test('impide asociar la venta a un cliente inexistente', () => {
+  const e=entorno({conStock:false});
+  agregarLote(e,'L-CRM',5,'2027-02-01');
+  assert.throws(()=>e.api.FLORA_registrarVenta({requestId:'VENTA-CRM-02',productoId:'FL-001',cantidad:1,clienteId:'NO-EXISTE',confirmado:true}),/no registrado/);
+  assert.equal(e.tablas.EVENTOS_STOCK.length,2);
+});
+
+test('sugerencias requieren consentimiento e intervalo configurado, sin envíos', () => {
+  const e=entorno({conStock:false});
+  e.tablas.PRODUCTOS[0].push('DIAS_REPOSICION');
+  e.tablas.PRODUCTOS[1].push(15);
+  agregarLote(e,'L-CRM',5,'2027-02-01');
+  e.api.FLORA_registrarVenta({requestId:'VENTA-CRM-03',productoId:'FL-001',cantidad:1,clienteId:'CLI-01',confirmado:true});
+  assert.equal(e.api.FLORA_prepararReposiciones('CLI-01','2026-12-10').sugerencias.length,0);
+  assert.equal(e.api.FLORA_prepararReposiciones('CLI-01','2026-12-11').sugerencias.length,1);
+  assert.equal(e.api.FLORA_prepararReposiciones('CLI-02','2026-12-11').motivo,'SIN_CONSENTIMIENTO');
 });
