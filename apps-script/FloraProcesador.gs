@@ -123,6 +123,42 @@ function FLORA_calcularProduccion(orden) {
   }) };
 }
 
+/** Catálogo de fórmulas que ya superaron la validación; no publica los ingredientes. */
+function FLORA_listarProductosCalculables() {
+  var productos = FLORA_filas_('PRODUCTOS').filter(function(p) {
+    return String(p.ACTIVO).toUpperCase() === 'SI' && String(p.TIPO || 'ELABORADO').toUpperCase() === 'ELABORADO';
+  });
+  var disponibles = [];
+  var inconsistentes = [];
+  productos.forEach(function(p) {
+    try {
+      FLORA_calcularProduccion({ productoId: String(p.PRODUCTO_ID), cantidad: 1 });
+      disponibles.push({ productoId: String(p.PRODUCTO_ID), nombre: String(p.NOMBRE) });
+    } catch (e) {
+      inconsistentes.push({ productoId: String(p.PRODUCTO_ID), motivo: String(e.message) });
+    }
+  });
+  disponibles.sort(function(a,b) { return a.nombre.localeCompare(b.nombre); });
+  return { disponibles: disponibles, inconsistentes: inconsistentes };
+}
+
+/** Vista para una futura PWA autenticada: nombres, unidades y cantidades a preparar. */
+function FLORA_previsualizarProduccion(orden) {
+  var plan = FLORA_calcularProduccion(orden);
+  var productos = FLORA_filas_('PRODUCTOS').filter(function(p) { return p.PRODUCTO_ID === plan.productoId; });
+  if (productos.length !== 1) throw new Error('Producto inexistente o PRODUCTO_ID duplicado');
+  var nombres = {};
+  FLORA_filas_('INSUMOS').forEach(function(i) {
+    if (nombres[i.INSUMO_ID]) throw new Error('INSUMO_ID duplicado');
+    nombres[i.INSUMO_ID] = String(i.NOMBRE || i.INSUMO_ID);
+  });
+  return { productoId: plan.productoId, nombre: String(productos[0].NOMBRE), cantidad: plan.cantidad,
+    ingredientes: plan.consumo.map(function(c) {
+      return { insumoId: c.insumoId, nombre: nombres[c.insumoId], cantidad: c.cantidad, unidad: c.unidad };
+    }),
+    aviso: 'Vista previa de receta validada. No descuenta stock ni registra producción.' };
+}
+
 /**
  * Registra una tanda completa como UN evento; requiere confirmación explícita.
  * Se usa LockService para controlar concurrencia y REQUEST_ID para idempotencia.
