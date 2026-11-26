@@ -77,3 +77,43 @@ test('rechaza vencimiento anterior a la fecha de producción', () => {
   const e=entorno();
   assert.throws(()=>e.api.FLORA_registrarProduccion({...orden(),vencimiento:'2026-11-01'}),/Vencimiento inválido/);
 });
+
+test('ingreso inicial agrega materias primas con unidades verificadas', () => {
+  const e=entorno({conStock:false});
+  const ingreso={requestId:'INICIAL-10',confirmado:true,items:[
+    {insumoId:'IN-001',cantidad:200,unidad:'g'},
+    {insumoId:'IN-002',cantidad:5,unidad:'unidad'},
+  ]};
+  const r=e.api.FLORA_registrarStockInicial(ingreso);
+  assert.equal(r.registrada,true);
+  assert.equal(e.tablas.EVENTOS_STOCK.length,2);
+  const produccion=e.api.FLORA_registrarProduccion(orden());
+  assert.equal(produccion.registrada,true);
+  assert.equal(e.tablas.EVENTOS_STOCK.length,3);
+  assert.equal(e.lockLiberado(),true);
+});
+
+test('stock inicial solo se admite una vez, pero reintentos del mismo ID son seguros', () => {
+  const e=entorno({conStock:false});
+  const ingreso={requestId:'INICIAL-11',confirmado:true,items:[{insumoId:'IN-001',cantidad:10,unidad:'g'}]};
+  e.api.FLORA_registrarStockInicial(ingreso);
+  assert.equal(e.api.FLORA_registrarStockInicial(ingreso).duplicada,true);
+  assert.throws(()=>e.api.FLORA_registrarStockInicial({...ingreso,requestId:'INICIAL-12'}),/primer evento/);
+  assert.equal(e.tablas.EVENTOS_STOCK.length,2);
+});
+
+test('recepción de compra incrementa stock y no duplica al reintentar', () => {
+  const e=entorno({conStock:false});
+  const compra={requestId:'COMPRA-001',confirmado:true,items:[{insumoId:'IN-001',cantidad:130,unidad:'g'}]};
+  assert.equal(e.api.FLORA_registrarIngresoCompra(compra).registrada,true);
+  assert.equal(e.api.FLORA_registrarIngresoCompra(compra).duplicada,true);
+  assert.equal(e.tablas.EVENTOS_STOCK.length,2);
+  assert.equal(e.api.FLORA_registrarProduccion(orden()).registrada,false);
+});
+
+test('unidades incorrectas y cantidades negativas nunca se registran', () => {
+  const e=entorno({conStock:false});
+  assert.throws(()=>e.api.FLORA_registrarIngresoCompra({requestId:'COMPRA-002',confirmado:true,items:[{insumoId:'IN-001',cantidad:12,unidad:'ml'}]}),/no validada/);
+  assert.throws(()=>e.api.FLORA_registrarIngresoCompra({requestId:'COMPRA-003',confirmado:true,items:[{insumoId:'IN-001',cantidad:-12,unidad:'g'}]}),/positivo/);
+  assert.equal(e.tablas.EVENTOS_STOCK.length,1);
+});
