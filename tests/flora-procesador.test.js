@@ -205,6 +205,44 @@ test('bandeja detecta identificadores de cliente duplicados antes de sugerir', (
   assert.throws(()=>e.api.FLORA_consultarReposicionesPendientes('2026-11-26'),/CLIENTE_ID vacío o duplicado/);
 });
 
+test('sesión confirmada aparece en el historial integral y no modifica stock', () => {
+  const e=entorno({conStock:false});
+  agregarVentaHistorica(e,'HIST-021','2026-10-01');
+  const o={requestId:'SESION-001',clienteId:'CLI-01',tipo:'SESION',servicio:'Tarot',fechaActividad:'2026-11-25',confirmado:true};
+  assert.equal(e.api.FLORA_registrarActividadCliente(o).registrada,true);
+  assert.equal(e.api.FLORA_registrarActividadCliente(o).duplicada,true);
+  const historial=e.api.FLORA_historialIntegralCliente('CLI-01');
+  assert.deepEqual(Array.from(historial,x=>x.tipo),['SESION','COMPRA']);
+  assert.equal(e.tablas.EVENTOS_STOCK.length,3);
+  assert.deepEqual(JSON.parse(e.tablas.EVENTOS_STOCK.at(-1)[4]).movimientos,[]);
+});
+
+test('actividad rechaza cliente inexistente, fecha futura y ausencia de confirmación', () => {
+  const e=entorno({conStock:false});
+  const o={requestId:'SESION-002',clienteId:'CLI-99',tipo:'CURSO',servicio:'Tinturas madre',fechaActividad:'2026-11-25',confirmado:true};
+  assert.throws(()=>e.api.FLORA_registrarActividadCliente(o),/Cliente no registrado/);
+  assert.throws(()=>e.api.FLORA_registrarActividadCliente({...o,clienteId:'CLI-01',fechaActividad:'2027-01-01'}),/fecha futura/);
+  assert.throws(()=>e.api.FLORA_registrarActividadCliente({...o,clienteId:'CLI-01',confirmado:false}),/confirmación/);
+  assert.equal(e.tablas.EVENTOS_STOCK.length,1);
+});
+
+test('prepara borradores de reposición y sesión sin enviar mensajes', () => {
+  const e=entorno({conStock:false});
+  agregarVentaHistorica(e,'HIST-031','2026-09-01');
+  agregarVentaHistorica(e,'HIST-032','2026-10-01');
+  const reposicion=e.api.FLORA_prepararBorradorMensaje({clienteId:'CLI-01',motivo:'REPOSICION',productoId:'FL-001',fechaReferencia:'2026-11-26'});
+  assert.match(reposicion.texto,/Cliente.*Jabón ficticio/);
+  assert.equal(reposicion.enviado,false);
+  const o={requestId:'SESION-003',clienteId:'CLI-01',tipo:'SESION',servicio:'Carta astral',fechaActividad:'2026-11-25',confirmado:true};
+  e.api.FLORA_registrarActividadCliente(o);
+  const post=e.api.FLORA_prepararBorradorMensaje({clienteId:'CLI-01',motivo:'POST_SESION',actividadId:'SESION-003'});
+  assert.match(post.texto,/Carta astral/);
+  assert.equal(post.requiereRevision,true);
+  assert.equal(e.api.FLORA_prepararBorradorMensaje({clienteId:'CLI-02',motivo:'POST_SESION',actividadId:'SESION-003'}).disponible,false);
+  assert.throws(()=>e.api.FLORA_prepararBorradorMensaje({clienteId:'CLI-01',motivo:'POST_SESION',actividadId:'SESION-999'}),/No existe una sesión/);
+  assert.equal(e.tablas.EVENTOS_STOCK.length,4);
+});
+
 test('no vende lotes vencidos aunque existan unidades físicas', () => {
   const e=entorno({conStock:false});
   agregarLote(e,'L-VENCIDO',10,'2026-11-25');
