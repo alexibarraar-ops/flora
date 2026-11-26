@@ -10,7 +10,7 @@ function entorno({ activo = 'SI', conStock = true } = {}) {
     PRODUCTOS: [['PRODUCTO_ID','NOMBRE','ACTIVO'], ['FL-001','Jabón ficticio',activo]],
     INSUMOS: [['INSUMO_ID','NOMBRE','UNIDAD'], ['IN-001','Base','g'],['IN-002','Envase','unidad']],
     RECETAS: [['PRODUCTO_ID','RENDIMIENTO','INSUMO_ID','CANTIDAD','UNIDAD'],['FL-001',2,'IN-001',80,'g'],['FL-001',2,'IN-002',2,'unidad']],
-    CLIENTES: [['CLIENTE_ID','NOMBRE'],['CLI-01','Cliente de prueba'],['CLI-02','Otra persona']],
+    CLIENTES: [['CLIENTE_ID','NOMBRE','CONSENTIMIENTO_CONTACTO'],['CLI-01','Cliente de prueba','SI'],['CLI-02','Otra persona','NO']],
     EVENTOS_STOCK: [['REQUEST_ID','FECHA','TIPO','DATOS_JSON','RESULTADO_JSON']],
   };
   if (conStock) tablas.EVENTOS_STOCK.push(['INICIAL-01','2026-11-25','INICIAL','{}',JSON.stringify({ movimientos:[
@@ -156,6 +156,32 @@ test('dos intentos de venta con el mismo ID producen una única compra en el his
   assert.equal(e.api.FLORA_registrarVenta(orden).duplicada,true);
   assert.equal(e.api.FLORA_historialCliente('CLI-01').length,1);
   assert.equal(e.tablas.EVENTOS_STOCK.length,3);
+});
+
+function agregarVentaHistorica(e,id,fecha,clienteId='CLI-01',productoId='FL-001') {
+  const datos={clienteId,productoId,cantidad:1};
+  e.tablas.EVENTOS_STOCK.push([id,fecha,'VENTA',JSON.stringify(datos),JSON.stringify({registrada:true,movimientos:[]})]);
+}
+
+test('seguimiento calcula reposición solo con dos fechas distintas verificadas', () => {
+  const e=entorno({conStock:false});
+  agregarVentaHistorica(e,'HIST-001','2026-09-01');
+  agregarVentaHistorica(e,'HIST-002','2026-09-01'); // dos unidades el mismo día no son dos ciclos
+  assert.equal(e.api.FLORA_sugerirReposiciones('CLI-01','2026-11-26').estado,'SIN_HISTORIAL_SUFICIENTE');
+  agregarVentaHistorica(e,'HIST-003','2026-10-01');
+  const r=e.api.FLORA_sugerirReposiciones('CLI-01','2026-11-26');
+  assert.equal(r.estado,'CON_ESTIMACIONES');
+  assert.deepEqual(JSON.parse(JSON.stringify(r.sugerencias)), [{productoId:'FL-001',ultimaCompra:'2026-10-01',intervaloObservadoDias:30,fechaEstimada:'2026-10-31',estado:'POSIBLE_REPOSICION'}]);
+  assert.equal(e.tablas.EVENTOS_STOCK.length,4); // no genera nuevos registros
+});
+
+test('seguimiento bloquea propuestas de contacto sin consentimiento', () => {
+  const e=entorno({conStock:false});
+  agregarVentaHistorica(e,'HIST-004','2026-09-01','CLI-02');
+  agregarVentaHistorica(e,'HIST-005','2026-10-01','CLI-02');
+  assert.equal(e.api.FLORA_sugerirReposiciones('CLI-02','2026-11-26').estado,'SIN_CONSENTIMIENTO');
+  assert.equal(e.api.FLORA_sugerirReposiciones('CLI-02','2026-11-26').sugerencias.length,0);
+  assert.throws(()=>e.api.FLORA_sugerirReposiciones('CLI-01','2026-02-30'),/Fecha de referencia inválida/);
 });
 
 test('no vende lotes vencidos aunque existan unidades físicas', () => {
