@@ -267,3 +267,37 @@ function FLORA_historialCliente(clienteId) {
       cantidad: e.datos.cantidad };
   });
 }
+
+/** Estimaciones orientativas con dos fechas de compra distintas; nunca contacta al cliente. */
+function FLORA_sugerirReposiciones(clienteId, fechaReferencia) {
+  if (typeof fechaReferencia !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(fechaReferencia) ||
+      new Date(fechaReferencia + 'T00:00:00Z').toISOString().slice(0, 10) !== fechaReferencia) {
+    throw new Error('Fecha de referencia inválida');
+  }
+  var clientes = FLORA_filas_('CLIENTES').filter(function(c) { return String(c.CLIENTE_ID) === clienteId; });
+  if (clientes.length !== 1) throw new Error('Cliente no registrado o CLIENTE_ID duplicado');
+  if (String(clientes[0].CONSENTIMIENTO_CONTACTO).toUpperCase() !== 'SI') {
+    return { clienteId: clienteId, estado: 'SIN_CONSENTIMIENTO', sugerencias: [] };
+  }
+  var porProducto = {};
+  FLORA_historialCliente(clienteId).forEach(function(v) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v.fecha) || !v.productoId || v.fecha > fechaReferencia) return;
+    if (!porProducto[v.productoId]) porProducto[v.productoId] = {};
+    porProducto[v.productoId][v.fecha] = true;
+  });
+  var sugerencias = [];
+  Object.keys(porProducto).forEach(function(productoId) {
+    var fechas = Object.keys(porProducto[productoId]).sort();
+    if (fechas.length < 2) return;
+    var ultima = fechas[fechas.length - 1];
+    var penultima = fechas[fechas.length - 2];
+    var intervalo = Math.round((Date.parse(ultima + 'T00:00:00Z') - Date.parse(penultima + 'T00:00:00Z')) / 86400000);
+    if (intervalo <= 0) return;
+    var estimada = new Date(Date.parse(ultima + 'T00:00:00Z') + intervalo * 86400000).toISOString().slice(0, 10);
+    sugerencias.push({ productoId: productoId, ultimaCompra: ultima, intervaloObservadoDias: intervalo,
+      fechaEstimada: estimada, estado: estimada <= fechaReferencia ? 'POSIBLE_REPOSICION' : 'ESTIMACION_FUTURA' });
+  });
+  sugerencias.sort(function(a, b) { return a.fechaEstimada.localeCompare(b.fechaEstimada); });
+  return { clienteId: clienteId, estado: sugerencias.length ? 'CON_ESTIMACIONES' : 'SIN_HISTORIAL_SUFICIENTE',
+    sugerencias: sugerencias, aviso: 'Estimaciones basadas solo en las dos últimas fechas de compra, no en consumo confirmado.' };
+}
