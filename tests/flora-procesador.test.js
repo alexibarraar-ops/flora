@@ -317,6 +317,27 @@ test('búsqueda interna de clientes ignora tildes, limita resultados y exige tex
   assert.throws(()=>e.api.FLORA_buscarClientes('m'),/al menos dos caracteres/);
 });
 
+test('diagnóstico inicial informa faltantes sin crear stock ni modificar la base', () => {
+  const e=entorno({activo:'NO',conStock:false});
+  const antes=JSON.stringify(e.tablas);
+  const estado=e.api.FLORA_diagnosticarArranque();
+  assert.equal(estado.estado,'PENDIENTE_VALIDACION');
+  assert.equal(estado.stockInicialRegistrado,false);
+  assert.equal(estado.productosPendientes[0].productoId,'FL-001');
+  assert.ok(estado.productosPendientes[0].motivos.includes('PRODUCTO_NO_VALIDADO'));
+  assert.equal(JSON.stringify(e.tablas),antes);
+});
+
+test('diagnóstico identifica unidad faltante y receta inconsistente', () => {
+  const e=entorno({conStock:false});
+  e.tablas.INSUMOS[1][2]='';
+  e.tablas.RECETAS[1][3]=-80;
+  const estado=e.api.FLORA_diagnosticarArranque();
+  assert.equal(estado.problemasInsumos[0].tipo,'UNIDAD_INSUMO_PENDIENTE');
+  assert.ok(estado.productosPendientes[0].motivos.includes('INSUMO_O_UNIDAD_NO_VALIDADO'));
+  assert.ok(estado.productosPendientes[0].motivos.includes('CANTIDAD_O_RENDIMIENTO_INCONSISTENTE'));
+});
+
 test('no vende lotes vencidos aunque existan unidades físicas', () => {
   const e=entorno({conStock:false});
   agregarLote(e,'L-VENCIDO',10,'2026-11-25');
