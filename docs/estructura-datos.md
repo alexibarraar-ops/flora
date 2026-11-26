@@ -5,7 +5,7 @@ El repositorio de GitHub es público: contiene código y pruebas ficticias, **nu
 
 | Hoja | Columnas propuestas | Uso |
 | --- | --- | --- |
-| `PRODUCTOS` | `PRODUCTO_ID`, `NOMBRE`, `TIPO`, `VARIANTE`, `ACTIVO` | Elaborados, comprados y consignación. |
+| `PRODUCTOS` | `PRODUCTO_ID`, `NOMBRE`, `TIPO`, `VARIANTE`, `ACTIVO`, `DIAS_REPOSICION` (opcional) | Elaborados, comprados y consignación. Intervalo de reposición validado por Lucy. |
 | `INSUMOS` | `INSUMO_ID`, `NOMBRE`, `UNIDAD`, `STOCK_MINIMO`, `PROVEEDOR_ID` | Materias primas, envases y etiquetas. |
 | `RECETAS` | `PRODUCTO_ID`, `RENDIMIENTO`, `INSUMO_ID`, `CANTIDAD`, `UNIDAD` | Fórmulas escalables. |
 | `LOTES` | `LOTE_ID`, `PRODUCTO_ID`, `FECHA_ELABORACION`, `VENCIMIENTO`, `CANTIDAD_ORIGINAL` | Trazabilidad y caducidad. |
@@ -28,3 +28,10 @@ El repositorio de GitHub es público: contiene código y pruebas ficticias, **nu
 8. El permiso para mensajes comerciales se registra expresamente en `CONSENTIMIENTO_CONTACTO`. No se infiere de una venta ni de una sesión; no se envían mensajes automáticamente.
 
 **Estado:** las hojas de catálogo, revisión y CRM están preparadas en el Google Sheets de Lucy; el procesador sigue en fase de prueba en GitHub. No está instalado bajo su cuenta ni conectado a operaciones reales.
+
+## Integración de ventas al CRM (fase de prueba)
+
+- `FLORA_registrarVenta` comprueba que `clienteId`, si se proporciona, exista en `CLIENTES` antes de guardar la venta. Una venta sin cliente sigue siendo válida.
+- `FLORA_historialCliente(clienteId)` reconstruye las compras desde eventos `VENTA` confirmados y las combina con actividades de sesiones, cursos y seguimientos cargadas en `ACTIVIDADES_CLIENTE`. No agrega filas ni duplica compras en esa hoja.
+- `FLORA_prepararReposiciones(clienteId, fecha)` propone seguimientos únicamente si `CONSENTIMIENTO_CONTACTO` es `SI` y el producto posee `DIAS_REPOSICION` entero positivo. No envía mensajes ni escribe datos; Lucy deberá revisar y aprobar cada contacto.
+- Para usar las lecturas en Google Sheets deben existir ambas hojas de CRM con los encabezados previstos. Las fechas de venta y seguimiento deben representarse como `AAAA-MM-DD`.
