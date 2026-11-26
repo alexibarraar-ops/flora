@@ -32,6 +32,13 @@ function FLORA_numero_(valor, campo) {
 
 function FLORA_redondear_(n) { return Math.round((n + Number.EPSILON) * 1e6) / 1e6; }
 
+function FLORA_validarRequest_(orden) {
+  if (!orden || orden.confirmado !== true) throw new Error('La operación requiere confirmación');
+  if (typeof orden.requestId !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(orden.requestId)) {
+    throw new Error('REQUEST_ID inválido');
+  }
+}
+
 function FLORA_asegurarEventos_() {
   var id = PropertiesService.getScriptProperties().getProperty('FLORA_SPREADSHEET_ID');
   if (!id) throw new Error('Falta configurar FLORA_SPREADSHEET_ID');
@@ -96,10 +103,7 @@ function FLORA_calcularProduccion(orden) {
  * Se usa LockService para controlar concurrencia y REQUEST_ID para idempotencia.
  */
 function FLORA_registrarProduccion(orden) {
-  if (!orden || orden.confirmado !== true) throw new Error('La operación requiere confirmación');
-  if (typeof orden.requestId !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(orden.requestId)) {
-    throw new Error('REQUEST_ID inválido');
-  }
+  FLORA_validarRequest_(orden);
   if (typeof orden.loteId !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(orden.loteId)) {
     throw new Error('Lote inválido');
   }
@@ -129,3 +133,47 @@ function FLORA_registrarProduccion(orden) {
     lock.releaseLock();
   }
 }
+
+/**
+ * Ingreso controlado de materias primas: stock inicial o compra/recepción.
+ * Entradas: [{insumoId, cantidad, unidad}]. No se permite inventar cantidades.
+ * La primera carga inicial puede realizarse una única vez para toda la base.
+ */
+function FLORA_registrarIngresoInsumos_(orden, tipo) {
+  FLORA_validarRequest_(orden);
+  if (tipo !== 'STOCK_INICIAL' && tipo !== 'INGRESO_COMPRA') throw new Error('Tipo de ingreso inválido');
+  if (!Array.isArray(orden.items) || orden.items.length === 0) throw new Error('Faltan insumos');
+  var lista = {};
+  FLORA_filas_('INSUMOS').forEach(function(i) { lista[i.INSUMO_ID] = i; });
+  var agregados = {};
+  orden.items.forEach(function(item) {
+    var insumo = lista[item.insumoId];
+    if (!insumo || !insumo.UNIDAD || insumo.UNIDAD !== item.unidad) {
+      throw new Error('Insumo o unidad no validada: ' + item.insumoId);
+    }
+    var cantidad = FLORA_numero_(item.cantidad, 'Cantidad de ingreso');
+    agregados[item.insumoId] = FLORA_redondear_((agregados[item.insumoId] || 0) + cantidad);
+  });
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('Procesador ocupado; reintentar con el mismo REQUEST_ID');
+  try {
+    var hoja = FLORA_asegurarEventos_();
+    var eventos = FLORA_eventos_(hoja);
+    var existente = eventos.filter(function(e) { return e.id === orden.requestId; })[0];
+    if (existente) return { duplicada: true, resultado: existente.resultado };
+    if (tipo === 'STOCK_INICIAL' && eventos.length) {
+      throw new Error('El stock inicial solo puede registrarse como primer evento; usar un ajuste controlado');
+    }
+    var movimientos = Object.keys(agregados).map(function(id) { return { tipo: 'insumo', id: id, cantidad: agregados[id] }; });
+    var resultado = { registrada: true, requestId: orden.requestId, tipo: tipo, movimientos: movimientos };
+    var fecha = Utilities.formatDate(new Date(), 'America/Argentina/Buenos_Aires', 'yyyy-MM-dd');
+    hoja.appendRow([orden.requestId, fecha, tipo, JSON.stringify({items:orden.items}), JSON.stringify(resultado)]);
+    SpreadsheetApp.flush();
+    return resultado;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function FLORA_registrarStockInicial(orden) { return FLORA_registrarIngresoInsumos_(orden, 'STOCK_INICIAL'); }
+function FLORA_registrarIngresoCompra(orden) { return FLORA_registrarIngresoInsumos_(orden, 'INGRESO_COMPRA'); }
