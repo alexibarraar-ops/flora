@@ -22,6 +22,39 @@ function movimiento(tipo, id, cantidad, referencia) {
 }
 
 /**
+ * Balance declarado para una receta con pérdida de proceso.
+ * La receta lleva el consumo BRUTO; este dato describe lo que finalmente se envasa.
+ * No modifica cantidades de la receta ni descuenta stock por separado.
+ */
+function calcularBalanceProduccion(producto, unidades) {
+  if (!producto || !producto.balance) return null;
+  if (!Number.isInteger(unidades) || unidades < 1) throw new Error('Unidades inválidas');
+  const rendimiento = positivo(producto.rendimiento, 'rendimiento');
+  const balance = producto.balance;
+  const entrada = positivo(balance.entradaBase, 'entrada bruta');
+  const salida = positivo(balance.salidaBase, 'salida envasada');
+  if (salida > entrada) throw new Error('La salida no puede superar la entrada declarada');
+  if (typeof balance.insumoId !== 'string' || !balance.insumoId ||
+      typeof balance.unidad !== 'string' || !balance.unidad) {
+    throw new Error('Balance sin insumo o unidad');
+  }
+  const receta = (producto.receta || []).filter(x => x.insumoId === balance.insumoId);
+  const brutoReceta = receta.reduce((n, x) => n + (x.unidad === balance.unidad ? x.cantidad : 0), 0);
+  if (!receta.length || receta.some(x => x.unidad !== balance.unidad) || Math.abs(brutoReceta - entrada) > 1e-6) {
+    throw new Error('El balance no coincide con el consumo bruto de la receta');
+  }
+  const factor = unidades / rendimiento;
+  return {
+    insumoId: balance.insumoId, unidad: balance.unidad,
+    entradaBruta: redondear(entrada * factor),
+    salidaEnvasada: redondear(salida * factor),
+    perdidaProceso: redondear((entrada - salida) * factor),
+    porcentajePerdida: redondear((entrada - salida) / entrada * 100),
+    nota: 'Estimación según la merma declarada en la receta validada.',
+  };
+}
+
+/**
  * Estado esperado:
  * productos: { id: { nombre, rendimiento, receta: [{ insumoId, cantidad, unidad }] } }
  * insumos: { id: { nombre, unidad, minimo } }
@@ -60,6 +93,7 @@ function planificarProduccion(estado, orden) {
     }
   }
   if (faltantes.length) return { aprobada: false, requestId, faltantes };
+  const balance = calcularBalanceProduccion(producto, cantidad);
   return {
     aprobada: true,
     requestId,
@@ -67,6 +101,7 @@ function planificarProduccion(estado, orden) {
       ...[...requeridos].map(([id, q]) => movimiento('insumo', id, -q, requestId)),
       movimiento('producto', productoId, cantidad, requestId),
     ],
+    balance,
     aviso: 'Registrar lote, fecha de elaboración y vencimiento en la capa de persistencia.',
   };
 }
@@ -102,5 +137,5 @@ function validarOrden(estado, orden) {
   }
 }
 
-const FloraCore = { planificarProduccion, planificarVenta, alertasReposicion };
+const FloraCore = { planificarProduccion, planificarVenta, alertasReposicion, calcularBalanceProduccion };
 if (typeof module !== 'undefined' && module.exports) module.exports = FloraCore;
