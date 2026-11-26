@@ -9,6 +9,8 @@ Este módulo prepara cálculos para producción, venta y alertas de reposición.
 - Propone movimientos de stock de productos terminados y ventas.
 - Devuelve alertas de insumos al llegar a su mínimo.
 - Exige un `requestId` por operación y detecta IDs previamente procesados.
+- Permite declarar un balance de proceso opcional por receta validada (`balance`: insumo, unidad, cantidad bruta y salida envasada para el rendimiento base). La calculadora muestra la pérdida prevista sin descontarla dos veces: el inventario consume la **cantidad bruta** que figura en los ingredientes.
+- Rechaza balances que no correspondan al consumo bruto registrado en la receta, que mezclen unidades o que declaren más salida que entrada. Si no hay merma validada, no la inventa.
 
 ## Qué **no** hace todavía
 
