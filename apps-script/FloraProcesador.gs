@@ -344,3 +344,85 @@ function FLORA_consultarReposicionesPendientes(fechaReferencia) {
   return { fechaReferencia: fechaReferencia, totalPendientes: pendientes.length, pendientes: pendientes,
     aviso: 'Revisar manualmente antes de contactar. Ningún mensaje fue enviado.' };
 }
+
+/** Una sesión o curso confirmado se registra como evento único, sin datos íntimos de la consulta. */
+function FLORA_registrarActividadCliente(orden) {
+  FLORA_validarRequest_(orden);
+  if (typeof orden.clienteId !== 'string' || !orden.clienteId.trim()) throw new Error('Cliente obligatorio');
+  if (orden.tipo !== 'SESION' && orden.tipo !== 'CURSO') throw new Error('Tipo de actividad inválido');
+  if (typeof orden.servicio !== 'string' || !orden.servicio.trim() || orden.servicio.length > 100) {
+    throw new Error('Servicio obligatorio (máximo 100 caracteres)');
+  }
+  FLORA_validarFechaReferencia_(orden.fechaActividad);
+  var hoy = Utilities.formatDate(new Date(), 'America/Argentina/Buenos_Aires', 'yyyy-MM-dd');
+  if (orden.fechaActividad > hoy) throw new Error('Una actividad realizada no puede tener fecha futura');
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('Procesador ocupado; reintentar con el mismo REQUEST_ID');
+  try {
+    var hoja = FLORA_asegurarEventos_();
+    var eventos = FLORA_eventos_(hoja);
+    var existente = eventos.filter(function(e) { return e.id === orden.requestId; })[0];
+    if (existente) return { duplicada: true, resultado: existente.resultado };
+    var clientes = FLORA_filas_('CLIENTES').filter(function(c) { return String(c.CLIENTE_ID) === orden.clienteId; });
+    if (clientes.length !== 1) throw new Error('Cliente no registrado o CLIENTE_ID duplicado');
+    var datos = { clienteId: orden.clienteId, tipo: orden.tipo, servicio: orden.servicio.trim(),
+      fechaActividad: orden.fechaActividad };
+    var resultado = { registrada: true, requestId: orden.requestId, tipo: orden.tipo, clienteId: orden.clienteId,
+      fechaActividad: orden.fechaActividad, movimientos: [] };
+    hoja.appendRow([orden.requestId, hoy, 'ACTIVIDAD_CLIENTE', JSON.stringify(datos), JSON.stringify(resultado)]);
+    SpreadsheetApp.flush();
+    return resultado;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Vista de compras, sesiones y cursos: un único historial, sin escrituras. */
+function FLORA_historialIntegralCliente(clienteId) {
+  var compras = FLORA_historialCliente(clienteId).map(function(c) {
+    return { requestId: c.requestId, fecha: c.fecha, tipo: 'COMPRA', referencia: c.productoId, cantidad: c.cantidad };
+  });
+  var actividades = FLORA_eventos_(FLORA_hoja_('EVENTOS_STOCK')).filter(function(e) {
+    return e.tipo === 'ACTIVIDAD_CLIENTE' && e.resultado.registrada === true && e.datos.clienteId === clienteId;
+  }).map(function(e) {
+    return { requestId: e.id, fecha: e.datos.fechaActividad, tipo: e.datos.tipo,
+      referencia: e.datos.servicio };
+  });
+  return compras.concat(actividades).sort(function(a,b) { return b.fecha.localeCompare(a.fecha); });
+}
+
+/** Mensaje listo para revisar y copiar; sin acceso a WhatsApp ni envíos. */
+function FLORA_prepararBorradorMensaje(orden) {
+  if (!orden || typeof orden.clienteId !== 'string') throw new Error('Cliente obligatorio');
+  var clientes = FLORA_filas_('CLIENTES').filter(function(c) { return String(c.CLIENTE_ID) === orden.clienteId; });
+  if (clientes.length !== 1) throw new Error('Cliente no registrado o CLIENTE_ID duplicado');
+  var cliente = clientes[0];
+  if (String(cliente.CONSENTIMIENTO_CONTACTO).toUpperCase() !== 'SI') {
+    return { disponible: false, motivo: 'SIN_CONSENTIMIENTO' };
+  }
+  var nombre = String(cliente.NOMBRE || '').trim().split(/\s+/)[0];
+  if (!nombre) throw new Error('Cliente sin nombre para personalizar');
+  var mensaje;
+  if (orden.motivo === 'REPOSICION') {
+    FLORA_validarFechaReferencia_(orden.fechaReferencia);
+    var posible = FLORA_sugerirReposiciones(orden.clienteId, orden.fechaReferencia).sugerencias.filter(function(s) {
+      return s.productoId === orden.productoId && s.estado === 'POSIBLE_REPOSICION';
+    });
+    if (!posible.length) throw new Error('No hay reposición estimada pendiente para ese producto');
+    var productos = FLORA_filas_('PRODUCTOS').filter(function(p) { return p.PRODUCTO_ID === orden.productoId; });
+    if (productos.length !== 1) throw new Error('Producto inexistente o duplicado');
+    mensaje = '¡Hola, ' + nombre + '! 🌿 Soy Lucy, de Flora. Quería saber cómo te resultó ' +
+      String(productos[0].NOMBRE) + ' y si necesitás reponerlo. ¡Te mando un abrazo!';
+  } else if (orden.motivo === 'POST_SESION') {
+    var sesion = FLORA_historialIntegralCliente(orden.clienteId).filter(function(a) {
+      return a.tipo === 'SESION' && a.requestId === orden.actividadId;
+    });
+    if (sesion.length !== 1) throw new Error('No existe una sesión confirmada con ese identificador');
+    mensaje = '¡Hola, ' + nombre + '! ✨ Soy Lucy, de Flora. Gracias por compartir la sesión de ' +
+      sesion[0].referencia + ' conmigo. Espero que estés muy bien. ¡Te mando un abrazo!';
+  } else {
+    throw new Error('Motivo de mensaje no habilitado');
+  }
+  return { disponible: true, clienteId: orden.clienteId, motivo: orden.motivo,
+    texto: mensaje, requiereRevision: true, enviado: false };
+}
