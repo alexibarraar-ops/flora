@@ -10,6 +10,7 @@ function entorno({ activo = 'SI', conStock = true } = {}) {
     PRODUCTOS: [['PRODUCTO_ID','NOMBRE','ACTIVO'], ['FL-001','Jabón ficticio',activo]],
     INSUMOS: [['INSUMO_ID','NOMBRE','UNIDAD'], ['IN-001','Base','g'],['IN-002','Envase','unidad']],
     RECETAS: [['PRODUCTO_ID','RENDIMIENTO','INSUMO_ID','CANTIDAD','UNIDAD'],['FL-001',2,'IN-001',80,'g'],['FL-001',2,'IN-002',2,'unidad']],
+    CLIENTES: [['CLIENTE_ID','NOMBRE'],['CLI-01','Cliente de prueba'],['CLI-02','Otra persona']],
     EVENTOS_STOCK: [['REQUEST_ID','FECHA','TIPO','DATOS_JSON','RESULTADO_JSON']],
   };
   if (conStock) tablas.EVENTOS_STOCK.push(['INICIAL-01','2026-11-25','INICIAL','{}',JSON.stringify({ movimientos:[
@@ -132,6 +133,29 @@ test('venta usa primero el lote con vencimiento más cercano (FEFO)', () => {
   assert.deepEqual(Array.from(r.movimientos,x=>[x.loteId,x.cantidad]),[['L-PRONTO',-3],['L-TARDE',-1]]);
   assert.equal(e.tablas.EVENTOS_STOCK.at(-1)[2],'VENTA');
   assert.equal(JSON.parse(e.tablas.EVENTOS_STOCK.at(-1)[3]).clienteId,'CLI-01');
+  const historial=e.api.FLORA_historialCliente('CLI-01');
+  assert.deepEqual(JSON.parse(JSON.stringify(historial)),[{requestId:'VENTA-001',fecha:'2026-11-26',productoId:'FL-001',cantidad:4}]);
+  assert.equal(e.api.FLORA_historialCliente('CLI-02').length,0);
+});
+
+test('rechaza cliente inexistente sin descontar stock y acepta ventas anónimas', () => {
+  const e=entorno({conStock:false});
+  agregarLote(e,'L-VALIDO',4,'2027-02-01');
+  assert.throws(()=>e.api.FLORA_registrarVenta({requestId:'VENTA-007',productoId:'FL-001',cantidad:1,clienteId:'CLI-99',confirmado:true}),/Cliente no registrado/);
+  assert.equal(e.tablas.EVENTOS_STOCK.length,2);
+  assert.equal(e.api.FLORA_registrarVenta({requestId:'VENTA-008',productoId:'FL-001',cantidad:1,confirmado:true}).registrada,true);
+  assert.equal(e.api.FLORA_historialCliente('CLI-01').length,0);
+  assert.throws(()=>e.api.FLORA_historialCliente('CLI-99'),/Cliente no registrado/);
+});
+
+test('dos intentos de venta con el mismo ID producen una única compra en el historial', () => {
+  const e=entorno({conStock:false});
+  agregarLote(e,'L-VALIDO',4,'2027-02-01');
+  const orden={requestId:'VENTA-009',productoId:'FL-001',cantidad:2,clienteId:'CLI-01',confirmado:true};
+  assert.equal(e.api.FLORA_registrarVenta(orden).registrada,true);
+  assert.equal(e.api.FLORA_registrarVenta(orden).duplicada,true);
+  assert.equal(e.api.FLORA_historialCliente('CLI-01').length,1);
+  assert.equal(e.tablas.EVENTOS_STOCK.length,3);
 });
 
 test('no vende lotes vencidos aunque existan unidades físicas', () => {
