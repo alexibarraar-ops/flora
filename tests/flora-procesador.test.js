@@ -42,6 +42,29 @@ test('vista previa calcula insumos y envases', () => {
   assert.deepEqual(Array.from(r.consumo,x=>x.cantidad),[120,3]);
 });
 
+test('catálogo privado muestra solo fórmulas activas y coherentes', () => {
+  const e=entorno();
+  const catalogo=e.api.FLORA_listarProductosCalculables();
+  assert.equal(catalogo.disponibles.length,1);
+  assert.equal(catalogo.disponibles[0].productoId,'FL-001');
+  assert.equal(catalogo.inconsistentes.length,0);
+  const vista=e.api.FLORA_previsualizarProduccion({productoId:'FL-001',cantidad:5});
+  assert.equal(vista.nombre,'Jabón ficticio');
+  assert.deepEqual(Array.from(vista.ingredientes,i=>i.cantidad),[200,5]);
+  assert.equal(e.tablas.EVENTOS_STOCK.length,2);
+});
+
+test('catálogo no habilita productos sin validar ni oculta recetas activas erróneas', () => {
+  const sinValidar=entorno({activo:'NO'});
+  assert.equal(sinValidar.api.FLORA_listarProductosCalculables().disponibles.length,0);
+  assert.throws(()=>sinValidar.api.FLORA_previsualizarProduccion({productoId:'FL-001',cantidad:1}),/pendiente de validación/);
+  const err=entorno();
+  err.tablas.RECETAS[1][4]='ml';
+  const catalogo=err.api.FLORA_listarProductosCalculables();
+  assert.equal(catalogo.disponibles.length,0);
+  assert.match(catalogo.inconsistentes[0].motivo,/Unidad no validada/);
+});
+
 test('receta sin validar bloquea cualquier elaboración', () => {
   const {api}=entorno({activo:'NO'});
   assert.throws(()=>api.FLORA_calcularProduccion(orden()),/pendiente de validación/);
