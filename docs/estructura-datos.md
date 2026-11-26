@@ -13,6 +13,8 @@ El repositorio de GitHub es público: contiene código y pruebas ficticias, **nu
 | `VENTAS` | `VENTA_ID`, `FECHA`, `CANAL`, `PRODUCTO_ID`, `CANTIDAD`, `IMPORTE`, `REQUEST_ID` | Detalle por producto y canal. |
 | `COMPRAS` | `COMPRA_ID`, `FECHA`, `PROVEEDOR_ID`, `INSUMO_ID`, `CANTIDAD`, `COSTO`, `REQUEST_ID` | Reposición y costos. |
 | `OPERACIONES_IA` | `REQUEST_ID`, `FECHA`, `TIPO`, `DATOS_JSON`, `ESTADO`, `RESULTADO_JSON` | Pedidos de secretaria virtual, pendientes de confirmación. |
+| `CLIENTES` | `CLIENTE_ID`, `NOMBRE`, `WHATSAPP`, `EMAIL`, `FECHA_ALTA`, `CONSENTIMIENTO_CONTACTO`, `FECHA_CONSENTIMIENTO`, `PREFERENCIAS`, `OBSERVACIONES` | Ficha única de cliente; consentimiento independiente de la compra. |
+| `ACTIVIDADES_CLIENTE` | `ACTIVIDAD_ID`, `CLIENTE_ID`, `FECHA`, `TIPO`, `REFERENCIA_ID`, `DETALLE`, `PROXIMO_CONTACTO`, `ESTADO_SEGUIMIENTO`, `OBSERVACIONES` | Historial común de compras, sesiones, cursos y seguimientos. |
 
 ## Reglas de integridad
 
@@ -22,5 +24,7 @@ El repositorio de GitHub es público: contiene código y pruebas ficticias, **nu
 4. Los saldos oficiales se obtienen del libro de movimientos, no de valores supuestos por el asistente.
 5. La elaboración necesita lote y vencimiento. Antes de vender debe incorporarse la selección de lotes no vencidos (FEFO).
 6. Las recetas digitalizadas de Lucy se revisarán contra rendimientos, unidades, envases y etiquetas antes de importar.
+7. Un cliente usa siempre el mismo `CLIENTE_ID`, aunque compre productos, reserve tarot, realice una carta astral o participe de un curso.
+8. El permiso para mensajes comerciales se registra expresamente en `CONSENTIMIENTO_CONTACTO`. No se infiere de una venta ni de una sesión; no se envían mensajes automáticamente.
 
-**Estado:** diseño y simulador de libro de movimientos preparados en GitHub. Todavía NO existe una base de datos operativa conectada a Google Sheets ni un procesador instalado bajo la cuenta de Lucy.
+**Estado:** las hojas de catálogo, revisión y CRM están preparadas en el Google Sheets de Lucy; el procesador sigue en fase de prueba en GitHub. No está instalado bajo su cuenta ni conectado a operaciones reales.
