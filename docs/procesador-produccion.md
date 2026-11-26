@@ -23,6 +23,13 @@ El archivo `apps-script/FloraProcesador.gs` es un **prototipo de procesador** pa
 - `FLORA_historialCliente(clienteId)` consulta las compras verificadas de ese cliente desde `EVENTOS_STOCK`, sin duplicarlas en otra hoja ni enviar mensajes. Es una consulta de solo lectura y requiere que el cliente exista.
 - `FLORA_sugerirReposiciones(clienteId, fechaReferencia)` entrega una **estimación orientativa** usando el intervalo entre las dos últimas fechas distintas de compra de un mismo producto. Necesita `CONSENTIMIENTO_CONTACTO = SI`; si no consta, no ofrece sugerencias. Una estimación no equivale a una necesidad confirmada. Nunca envía WhatsApp ni registra un seguimiento automáticamente.
 - `FLORA_consultarReposicionesPendientes(fechaReferencia)` prepara una bandeja general de posibles reposiciones cuya fecha estimada ya pasó, únicamente de clientes con consentimiento afirmativo. Lee la base una vez por consulta, retorna nombre, cliente, producto y fechas para revisión humana, y no envía mensajes. Esta salida queda preparada para una futura pantalla y secretaria por voz; **no** exponerla en un endpoint público sin autenticación/autorización.
+
+## Sesiones, cursos y borradores (prototipo)
+
+- `FLORA_registrarActividadCliente` registra una actividad **realizada** (`SESION` o `CURSO`) con cliente, nombre breve de servicio y fecha; exige confirmación e ID único. No almacena detalles personales o interpretaciones de una sesión. A diferencia de agendar una cita futura, registra únicamente actividades ya realizadas.
+- `FLORA_historialIntegralCliente` combina las compras y las actividades confirmadas en una ficha única, sin copiar filas entre tablas. `EVENTOS_STOCK` es el libro canónico hasta que exista una proyección reconciliada de `ACTIVIDADES_CLIENTE`.
+- `FLORA_prepararBorradorMensaje` genera texto editable de **reposición estimada** o **agradecimiento tras una sesión identificada**. Rechaza clientes sin consentimiento, recomendaciones sin fundamento y sesiones inexistentes. Devuelve `enviado: false`: nunca contacta a nadie ni registra el mensaje como enviado.
+- Los mensajes de cumpleaños, aniversarios, promociones y cursos se definirán más adelante con fechas, preferencias y consentimientos confirmados. No se inventan aniversarios ni intereses.
 - Reconstruye los saldos de los lotes desde `EVENTOS_STOCK` y elige primero los lotes aptos con vencimiento más cercano (**FEFO**).
 - Rechaza ventas sin unidades suficientes **no vencidas**. Un reintento con el mismo `REQUEST_ID` no vuelve a descontar.
 - Una venta puede descontar de varios lotes. Los lotes vencidos permanecen en el historial, pero quedan excluidos de la venta.
