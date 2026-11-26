@@ -21,6 +21,7 @@ El archivo `apps-script/FloraProcesador.gs` es un **prototipo de procesador** pa
 
 - `FLORA_registrarVenta` recibe `REQUEST_ID`, producto, cantidad entera y confirmación. `clienteId` es opcional; si se informa, debe existir una única vez en `CLIENTES`. Las ventas anónimas siguen permitidas.
 - `FLORA_historialCliente(clienteId)` consulta las compras verificadas de ese cliente desde `EVENTOS_STOCK`, sin duplicarlas en otra hoja ni enviar mensajes. Es una consulta de solo lectura y requiere que el cliente exista.
+- `FLORA_sugerirReposiciones(clienteId, fechaReferencia)` entrega una **estimación orientativa** usando el intervalo entre las dos últimas fechas distintas de compra de un mismo producto. Necesita `CONSENTIMIENTO_CONTACTO = SI`; si no consta, no ofrece sugerencias. Una estimación no equivale a una necesidad confirmada. Nunca envía WhatsApp ni registra un seguimiento automáticamente.
 - Reconstruye los saldos de los lotes desde `EVENTOS_STOCK` y elige primero los lotes aptos con vencimiento más cercano (**FEFO**).
 - Rechaza ventas sin unidades suficientes **no vencidas**. Un reintento con el mismo `REQUEST_ID` no vuelve a descontar.
 - Una venta puede descontar de varios lotes. Los lotes vencidos permanecen en el historial, pero quedan excluidos de la venta.
