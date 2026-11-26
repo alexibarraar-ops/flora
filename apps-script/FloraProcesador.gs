@@ -426,3 +426,98 @@ function FLORA_prepararBorradorMensaje(orden) {
   return { disponible: true, clienteId: orden.clienteId, motivo: orden.motivo,
     texto: mensaje, requiereRevision: true, enviado: false };
 }
+
+/** Convierte un horario local de Buenos Aires en minutos comparables. */
+function FLORA_minutoAgenda_(valor) {
+  if (typeof valor !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(valor)) {
+    throw new Error('Fecha y hora inválidas (AAAA-MM-DDTHH:mm)');
+  }
+  var partes = valor.split('T');
+  FLORA_validarFechaReferencia_(partes[0]);
+  var hora = Number(partes[1].slice(0,2));
+  var minutos = Number(partes[1].slice(3,5));
+  if (hora > 23 || minutos > 59) throw new Error('Hora inválida');
+  return Date.parse(partes[0] + 'T00:00:00Z') / 60000 + hora * 60 + minutos;
+}
+
+/** Reconstruye turnos y cancelaciones desde eventos; no conecta todavía con Google Calendar. */
+function FLORA_turnos_(eventos) {
+  var turnos = {};
+  eventos.forEach(function(e) {
+    if (e.tipo === 'RESERVA_TURNO' && e.resultado.registrada === true) {
+      if (turnos[e.id]) throw new Error('Turno duplicado en el historial');
+      turnos[e.id] = { turnoId: e.id, clienteId: e.datos.clienteId, servicio: e.datos.servicio,
+        inicio: e.datos.inicio, fin: e.datos.fin, estado: 'CONFIRMADO' };
+    } else if (e.tipo === 'CANCELACION_TURNO' && e.resultado.registrada === true) {
+      var turno = turnos[e.datos.turnoId];
+      if (!turno || turno.estado === 'CANCELADO') throw new Error('Cancelación incoherente en historial');
+      turno.estado = 'CANCELADO';
+    }
+  });
+  return Object.keys(turnos).map(function(id) { return turnos[id]; });
+}
+
+/** Reserva bajo bloqueo; cada intervalo es [inicio, fin), para permitir turnos consecutivos. */
+function FLORA_reservarTurno(orden) {
+  FLORA_validarRequest_(orden);
+  if (typeof orden.clienteId !== 'string' || !orden.clienteId.trim()) throw new Error('Cliente obligatorio');
+  if (typeof orden.servicio !== 'string' || !orden.servicio.trim() || orden.servicio.length > 100) {
+    throw new Error('Servicio obligatorio (máximo 100 caracteres)');
+  }
+  var inicio = FLORA_minutoAgenda_(orden.inicio);
+  var fin = FLORA_minutoAgenda_(orden.fin);
+  if (fin <= inicio || fin - inicio > 480) throw new Error('Duración de turno inválida');
+  var hoy = Utilities.formatDate(new Date(), 'America/Argentina/Buenos_Aires', 'yyyy-MM-dd');
+  if (orden.inicio.slice(0,10) < hoy) throw new Error('No se puede reservar un día pasado');
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('Agenda ocupada; reintentar con el mismo REQUEST_ID');
+  try {
+    var hoja = FLORA_asegurarEventos_();
+    var eventos = FLORA_eventos_(hoja);
+    var existente = eventos.filter(function(e) { return e.id === orden.requestId; })[0];
+    if (existente) return { duplicada: true, resultado: existente.resultado };
+    var clientes = FLORA_filas_('CLIENTES').filter(function(c) { return String(c.CLIENTE_ID) === orden.clienteId; });
+    if (clientes.length !== 1) throw new Error('Cliente no registrado o CLIENTE_ID duplicado');
+    var ocupado = FLORA_turnos_(eventos).some(function(t) {
+      return t.estado === 'CONFIRMADO' && inicio < FLORA_minutoAgenda_(t.fin) && fin > FLORA_minutoAgenda_(t.inicio);
+    });
+    if (ocupado) return { registrada: false, motivo: 'HORARIO_OCUPADO' };
+    var datos = { clienteId: orden.clienteId, servicio: orden.servicio.trim(), inicio: orden.inicio, fin: orden.fin };
+    var resultado = { registrada: true, turnoId: orden.requestId, estado: 'CONFIRMADO', movimientos: [] };
+    hoja.appendRow([orden.requestId, hoy, 'RESERVA_TURNO', JSON.stringify(datos), JSON.stringify(resultado)]);
+    SpreadsheetApp.flush();
+    return resultado;
+  } finally { lock.releaseLock(); }
+}
+
+function FLORA_cancelarTurno(orden) {
+  FLORA_validarRequest_(orden);
+  if (typeof orden.turnoId !== 'string' || !orden.turnoId.trim()) throw new Error('Turno obligatorio');
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('Agenda ocupada; reintentar con el mismo REQUEST_ID');
+  try {
+    var hoja = FLORA_asegurarEventos_();
+    var eventos = FLORA_eventos_(hoja);
+    var existente = eventos.filter(function(e) { return e.id === orden.requestId; })[0];
+    if (existente) return { duplicada: true, resultado: existente.resultado };
+    var turno = FLORA_turnos_(eventos).filter(function(t) { return t.turnoId === orden.turnoId; })[0];
+    if (!turno || turno.estado !== 'CONFIRMADO') throw new Error('Turno inexistente o ya cancelado');
+    var hoy = Utilities.formatDate(new Date(), 'America/Argentina/Buenos_Aires', 'yyyy-MM-dd');
+    var resultado = { registrada: true, turnoId: orden.turnoId, estado: 'CANCELADO', movimientos: [] };
+    hoja.appendRow([orden.requestId, hoy, 'CANCELACION_TURNO', JSON.stringify({ turnoId: orden.turnoId }), JSON.stringify(resultado)]);
+    SpreadsheetApp.flush();
+    return resultado;
+  } finally { lock.releaseLock(); }
+}
+
+/** Consulta prevista para interfaz y voz; no escribe ni cambia turnos. */
+function FLORA_consultarAgenda(desde, hasta) {
+  var comienzo = FLORA_minutoAgenda_(desde);
+  var final = FLORA_minutoAgenda_(hasta);
+  if (final <= comienzo || final - comienzo > 31 * 1440) throw new Error('Rango de agenda inválido');
+  var turnos = FLORA_turnos_(FLORA_eventos_(FLORA_hoja_('EVENTOS_STOCK'))).filter(function(t) {
+    return t.estado === 'CONFIRMADO' && comienzo < FLORA_minutoAgenda_(t.fin) && final > FLORA_minutoAgenda_(t.inicio);
+  });
+  turnos.sort(function(a,b) { return a.inicio.localeCompare(b.inicio); });
+  return { desde: desde, hasta: hasta, turnos: turnos, total: turnos.length };
+}
