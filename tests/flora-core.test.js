@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { planificarProduccion, planificarVenta, alertasReposicion } = require('../src/flora-core');
+const { planificarProduccion, planificarVenta, alertasReposicion, calcularBalanceProduccion } = require('../src/flora-core');
 
 const estado = () => ({
   productos: { crema: { nombre: 'Crema ficticia', rendimiento: 5, receta: [
@@ -58,4 +58,22 @@ test('avisa reposición cuando el stock alcanza o baja del mínimo', () => {
 test('no acepta cantidades inválidas', () => {
   assert.throws(() => planificarVenta(estado(), { requestId: 'v3', productoId: 'crema', cantidad: -1 }), /positivo/);
   assert.throws(() => planificarProduccion(estado(), { productoId: 'crema', cantidad: 5 }), /requestId/);
+});
+
+test('balance de proceso separa cantidad bruta, envasada y pérdida declarada', () => {
+  const s=estado();
+  s.productos.crema.balance={insumoId:'aceite',entradaBase:100,salidaBase:70,unidad:'ml'};
+  const r=planificarProduccion(s,{requestId:'p-balance-01',productoId:'crema',cantidad:3});
+  assert.equal(r.aprobada,true);
+  assert.deepEqual(r.balance,{insumoId:'aceite',unidad:'ml',entradaBruta:60,salidaEnvasada:42,perdidaProceso:18,porcentajePerdida:30,nota:'Estimación según la merma declarada en la receta validada.'});
+  assert.equal(r.movimientos[0].cantidad,-60); // la merma ya está incluida en lo consumido
+});
+
+test('balance incoherente no se acepta como receta validada', () => {
+  const s=estado();
+  s.productos.crema.balance={insumoId:'aceite',entradaBase:100,salidaBase:110,unidad:'ml'};
+  assert.throws(()=>calcularBalanceProduccion(s.productos.crema,3),/salida no puede superar/);
+  s.productos.crema.balance.salidaBase=70;
+  s.productos.crema.balance.entradaBase=120;
+  assert.throws(()=>planificarProduccion(s,{requestId:'p-balance-02',productoId:'crema',cantidad:3}),/no coincide/);
 });
