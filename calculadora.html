@@ -56,14 +56,14 @@
     document.getElementById('mas').disabled=cantidad===200;
     document.getElementById('base').textContent=`Receta base: ${ejemplos[Number(select.value)].rendimiento} unidades`;
     const cont=document.getElementById('ingredientes');cont.replaceChildren();
-    lista().forEach(x=>{const row=document.createElement('div');row.className='ingredient';const n=document.createElement('span');n.textContent=x.nombre;const q=document.createElement('strong');q.textContent=`${formato.format(x.cantidad)} ${x.unidad}`;row.append(n,q);cont.append(row)});
+    lista().forEach(x=>{const row=document.createElement('div');row.className='ingredient';const n=document.createElement('span');n.textContent=x.nombre;const q=document.createElement('strong');const unidad=x.unidad==='unidad'&&x.cantidad!==1?'unidades':x.unidad;q.textContent=`${formato.format(x.cantidad)} ${unidad}`;row.append(n,q);cont.append(row)});
     document.getElementById('feedback').textContent='';
   }
   document.getElementById('menos').addEventListener('click',()=>{cantidad=Math.max(1,cantidad-1);pintar()});
   document.getElementById('mas').addEventListener('click',()=>{cantidad=Math.min(200,cantidad+1);pintar()});
   select.addEventListener('change',pintar);
   document.getElementById('copiar').addEventListener('click',async()=>{
-    const contenido=`${ejemplos[Number(select.value)].nombre} · ${cantidad} unidades\n`+lista().map(x=>`${x.nombre}: ${formato.format(x.cantidad)} ${x.unidad}`).join('\n')+'\n\nDEMO · No usar para fabricar';
+    const contenido=`${ejemplos[Number(select.value)].nombre} · ${cantidad} unidades\n`+lista().map(x=>`${x.nombre}: ${formato.format(x.cantidad)} ${x.unidad==='unidad'&&x.cantidad!==1?'unidades':x.unidad}`).join('\n')+'\n\nDEMO · No usar para fabricar';
     try{await navigator.clipboard.writeText(contenido);document.getElementById('feedback').textContent='Lista copiada'}catch{document.getElementById('feedback').textContent='No se pudo copiar automáticamente'}
   });
   pintar();
