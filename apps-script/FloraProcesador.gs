@@ -268,19 +268,17 @@ function FLORA_historialCliente(clienteId) {
   });
 }
 
-/** Estimaciones orientativas con dos fechas de compra distintas; nunca contacta al cliente. */
-function FLORA_sugerirReposiciones(clienteId, fechaReferencia) {
+function FLORA_validarFechaReferencia_(fechaReferencia) {
   if (typeof fechaReferencia !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(fechaReferencia) ||
       new Date(fechaReferencia + 'T00:00:00Z').toISOString().slice(0, 10) !== fechaReferencia) {
     throw new Error('Fecha de referencia inválida');
   }
-  var clientes = FLORA_filas_('CLIENTES').filter(function(c) { return String(c.CLIENTE_ID) === clienteId; });
-  if (clientes.length !== 1) throw new Error('Cliente no registrado o CLIENTE_ID duplicado');
-  if (String(clientes[0].CONSENTIMIENTO_CONTACTO).toUpperCase() !== 'SI') {
-    return { clienteId: clienteId, estado: 'SIN_CONSENTIMIENTO', sugerencias: [] };
-  }
+}
+
+/** Cálculo sin escrituras para una lista de compras ya verificadas. */
+function FLORA_estimarReposiciones_(historial, fechaReferencia) {
   var porProducto = {};
-  FLORA_historialCliente(clienteId).forEach(function(v) {
+  historial.forEach(function(v) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(v.fecha) || !v.productoId || v.fecha > fechaReferencia) return;
     if (!porProducto[v.productoId]) porProducto[v.productoId] = {};
     porProducto[v.productoId][v.fecha] = true;
@@ -298,6 +296,51 @@ function FLORA_sugerirReposiciones(clienteId, fechaReferencia) {
       fechaEstimada: estimada, estado: estimada <= fechaReferencia ? 'POSIBLE_REPOSICION' : 'ESTIMACION_FUTURA' });
   });
   sugerencias.sort(function(a, b) { return a.fechaEstimada.localeCompare(b.fechaEstimada); });
+  return sugerencias;
+}
+
+/** Estimaciones orientativas con dos fechas de compra distintas; nunca contacta al cliente. */
+function FLORA_sugerirReposiciones(clienteId, fechaReferencia) {
+  FLORA_validarFechaReferencia_(fechaReferencia);
+  var clientes = FLORA_filas_('CLIENTES').filter(function(c) { return String(c.CLIENTE_ID) === clienteId; });
+  if (clientes.length !== 1) throw new Error('Cliente no registrado o CLIENTE_ID duplicado');
+  if (String(clientes[0].CONSENTIMIENTO_CONTACTO).toUpperCase() !== 'SI') {
+    return { clienteId: clienteId, estado: 'SIN_CONSENTIMIENTO', sugerencias: [] };
+  }
+  var sugerencias = FLORA_estimarReposiciones_(FLORA_historialCliente(clienteId), fechaReferencia);
   return { clienteId: clienteId, estado: sugerencias.length ? 'CON_ESTIMACIONES' : 'SIN_HISTORIAL_SUFICIENTE',
     sugerencias: sugerencias, aviso: 'Estimaciones basadas solo en las dos últimas fechas de compra, no en consumo confirmado.' };
+}
+
+/** Bandeja operativa de posibles reposiciones vencidas; una lectura de clientes y eventos. */
+function FLORA_consultarReposicionesPendientes(fechaReferencia) {
+  FLORA_validarFechaReferencia_(fechaReferencia);
+  var clientes = FLORA_filas_('CLIENTES');
+  var ids = {};
+  clientes.forEach(function(c) {
+    var id = String(c.CLIENTE_ID || '');
+    if (!id || ids[id]) throw new Error('CLIENTE_ID vacío o duplicado');
+    ids[id] = c;
+  });
+  var historial = {};
+  FLORA_eventos_(FLORA_hoja_('EVENTOS_STOCK')).forEach(function(e) {
+    if (e.tipo !== 'VENTA' || e.resultado.registrada !== true || !e.datos.clienteId) return;
+    var id = e.datos.clienteId;
+    if (!ids[id] || String(ids[id].CONSENTIMIENTO_CONTACTO).toUpperCase() !== 'SI') return;
+    if (!historial[id]) historial[id] = [];
+    historial[id].push({ fecha: e.fecha, productoId: e.datos.productoId });
+  });
+  var pendientes = [];
+  clientes.forEach(function(c) {
+    var id = String(c.CLIENTE_ID);
+    if (String(c.CONSENTIMIENTO_CONTACTO).toUpperCase() !== 'SI') return;
+    FLORA_estimarReposiciones_(historial[id] || [], fechaReferencia).forEach(function(s) {
+      if (s.estado === 'POSIBLE_REPOSICION') pendientes.push({ clienteId: id,
+        nombre: String(c.NOMBRE || ''), productoId: s.productoId, ultimaCompra: s.ultimaCompra,
+        fechaEstimada: s.fechaEstimada, intervaloObservadoDias: s.intervaloObservadoDias });
+    });
+  });
+  pendientes.sort(function(a, b) { return a.fechaEstimada.localeCompare(b.fechaEstimada) || a.clienteId.localeCompare(b.clienteId); });
+  return { fechaReferencia: fechaReferencia, totalPendientes: pendientes.length, pendientes: pendientes,
+    aviso: 'Revisar manualmente antes de contactar. Ningún mensaje fue enviado.' };
 }
