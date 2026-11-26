@@ -184,6 +184,27 @@ test('seguimiento bloquea propuestas de contacto sin consentimiento', () => {
   assert.throws(()=>e.api.FLORA_sugerirReposiciones('CLI-01','2026-02-30'),/Fecha de referencia inválida/);
 });
 
+test('bandeja general muestra solo reposiciones estimadas vencidas y consentidas', () => {
+  const e=entorno({conStock:false});
+  agregarVentaHistorica(e,'HIST-011','2026-09-01');
+  agregarVentaHistorica(e,'HIST-012','2026-10-01');
+  agregarVentaHistorica(e,'HIST-013','2026-09-01','CLI-02');
+  agregarVentaHistorica(e,'HIST-014','2026-10-01','CLI-02');
+  const filasAntes=e.tablas.EVENTOS_STOCK.length;
+  const r=e.api.FLORA_consultarReposicionesPendientes('2026-11-26');
+  assert.equal(r.totalPendientes,1);
+  assert.equal(r.pendientes[0].nombre,'Cliente de prueba');
+  assert.equal(r.pendientes[0].clienteId,'CLI-01');
+  assert.equal(e.tablas.EVENTOS_STOCK.length,filasAntes);
+  assert.equal(e.api.FLORA_consultarReposicionesPendientes('2026-10-15').totalPendientes,0);
+});
+
+test('bandeja detecta identificadores de cliente duplicados antes de sugerir', () => {
+  const e=entorno({conStock:false});
+  e.tablas.CLIENTES.push(['CLI-01','Copia accidental','SI']);
+  assert.throws(()=>e.api.FLORA_consultarReposicionesPendientes('2026-11-26'),/CLIENTE_ID vacío o duplicado/);
+});
+
 test('no vende lotes vencidos aunque existan unidades físicas', () => {
   const e=entorno({conStock:false});
   agregarLote(e,'L-VENCIDO',10,'2026-11-25');
