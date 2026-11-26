@@ -30,6 +30,13 @@ El archivo `apps-script/FloraProcesador.gs` es un **prototipo de procesador** pa
 - `FLORA_historialIntegralCliente` combina las compras y las actividades confirmadas en una ficha única, sin copiar filas entre tablas. `EVENTOS_STOCK` es el libro canónico hasta que exista una proyección reconciliada de `ACTIVIDADES_CLIENTE`.
 - `FLORA_prepararBorradorMensaje` genera texto editable de **reposición estimada** o **agradecimiento tras una sesión identificada**. Rechaza clientes sin consentimiento, recomendaciones sin fundamento y sesiones inexistentes. Devuelve `enviado: false`: nunca contacta a nadie ni registra el mensaje como enviado.
 - Los mensajes de cumpleaños, aniversarios, promociones y cursos se definirán más adelante con fechas, preferencias y consentimientos confirmados. No se inventan aniversarios ni intereses.
+
+## Agenda Flora (motor inicial, no conectado)
+
+- `FLORA_reservarTurno` registra una reserva confirmada con `REQUEST_ID`, `clienteId`, `servicio`, `inicio` y `fin` en formato local `AAAA-MM-DDTHH:mm` (Argentina). Requiere confirmación; rechaza duración no positiva o mayor a 8 horas, días pasados y horarios superpuestos. Permite turnos consecutivos.
+- `FLORA_cancelarTurno` cancela por identificador, mediante un nuevo evento inmutable, sin borrar el original. Repetir el mismo `REQUEST_ID` no duplica la cancelación.
+- `FLORA_consultarAgenda(desde, hasta)` devuelve turnos vigentes de hasta 31 días; es de solo lectura. Los datos se derivan de `EVENTOS_STOCK`, sin hojas o calendarios paralelos que puedan quedar desincronizados.
+- **Pendiente**: zona horaria y validación fina de hora actual, horarios de atención, descansos, duración por servicio, reprogramación, disponibilidad externa, autorización por usuaria y sincronización unidireccional segura con un calendario propiedad de Lucy. No se crearon eventos en Google Calendar. Nunca incluir detalles íntimos de las sesiones en eventos sincronizados.
 - Reconstruye los saldos de los lotes desde `EVENTOS_STOCK` y elige primero los lotes aptos con vencimiento más cercano (**FEFO**).
 - Rechaza ventas sin unidades suficientes **no vencidas**. Un reintento con el mismo `REQUEST_ID` no vuelve a descontar.
 - Una venta puede descontar de varios lotes. Los lotes vencidos permanecen en el historial, pero quedan excluidos de la venta.
