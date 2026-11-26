@@ -2,6 +2,8 @@
 
 El archivo `apps-script/FloraProcesador.gs` es un **prototipo de procesador** para ejecutar más adelante en un Apps Script cuya propietaria sea Lucy.
 
+La comprobación inicial `FLORA_verificarConexionPrivada()` valida, sin escrituras, la presencia de las hojas y columnas esenciales y la zona horaria del libro configurado. Su resultado `preparado` significa solamente **estructura mínima disponible**, no autorización para operar ni calidad de recetas. El procedimiento de instalación prevista está en `docs/conexion-privada.md`.
+
 ## Circuito
 
 1. Lee `PRODUCTOS`, `RECETAS` e `INSUMOS` de `FLORA_OS_DB`.
