@@ -23,6 +23,37 @@ function FLORA_filas_(nombre) {
   });
 }
 
+/** Prueba de conexión SIN escrituras ni exposición del contenido privado. */
+function FLORA_verificarConexionPrivada() {
+  var id = PropertiesService.getScriptProperties().getProperty('FLORA_SPREADSHEET_ID');
+  if (!id) throw new Error('Falta configurar FLORA_SPREADSHEET_ID');
+  var libro = SpreadsheetApp.openById(id);
+  var especificacion = {
+    PRODUCTOS: ['PRODUCTO_ID', 'NOMBRE', 'ACTIVO'],
+    INSUMOS: ['INSUMO_ID', 'NOMBRE', 'UNIDAD'],
+    RECETAS: ['PRODUCTO_ID', 'INSUMO_ID', 'CANTIDAD', 'UNIDAD', 'RENDIMIENTO'],
+    CLIENTES: ['CLIENTE_ID', 'NOMBRE', 'CONSENTIMIENTO_CONTACTO'],
+    VENTAS: ['VENTA_ID'],
+    OPERACIONES_IA: ['REQUEST_ID'],
+    REVISION_RECETAS: ['PRODUCTO_ID', 'ESTADO']
+  };
+  var faltantes = [];
+  var encabezadosIncompletos = [];
+  Object.keys(especificacion).forEach(function(nombre) {
+    var hoja = libro.getSheetByName(nombre);
+    if (!hoja) { faltantes.push(nombre); return; }
+    var datos = hoja.getRange(1, 1, 1, hoja.getLastColumn()).getValues()[0].map(String);
+    var columnas = especificacion[nombre].filter(function(c) { return datos.indexOf(c) === -1; });
+    if (columnas.length) encabezadosIncompletos.push({ hoja: nombre, columnas: columnas });
+  });
+  var zona = libro.getSpreadsheetTimeZone();
+  return { libro: libro.getName(), zonaHoraria: zona,
+    faltanHojas: faltantes, faltanColumnas: encabezadosIncompletos,
+    preparado: !faltantes.length && !encabezadosIncompletos.length && zona === 'America/Buenos_Aires',
+    modo: 'SOLO_LECTURA',
+    aviso: 'Este chequeo no activa registros, no publica API y no valida recetas ni stock.' };
+}
+
 function FLORA_numero_(valor, campo) {
   if (typeof valor !== 'number' || !isFinite(valor) || valor <= 0) {
     throw new Error(campo + ' debe ser positivo');
