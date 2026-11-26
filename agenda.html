@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f36c70">
+  <meta name="description" content="Agenda Flora OS: demostración visual sin conexión a datos reales.">
+  <title>Agenda · Flora OS</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600&display=swap');
+    :root{font-family:'DM Sans',Arial,sans-serif;color:#405846;background:#fffaf6}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 90% 2%,#ffe0d8 0,transparent 32%),radial-gradient(circle at 1% 90%,#e8f0e3 0,transparent 37%),#fffaf6;min-height:100vh}
+    main{max-width:880px;margin:auto;padding:22px 18px 80px}.brand,.top,.weekbar,.dayhead,.appt,.actions,.section-title{display:flex;align-items:center;justify-content:space-between;gap:12px}.brand a{text-decoration:none;color:inherit}.logo{display:flex;gap:10px;align-items:center;font-size:25px;font-weight:700;letter-spacing:-1px}.mark{width:42px;height:42px;background:#f16d72;color:white;border-radius:50%;display:grid;place-items:center;font-size:24px}.badge{border:1px solid #f4d9d1;background:#fff0e9;color:#b57670;font-weight:700;font-size:11px;border-radius:99px;padding:9px 11px;white-space:nowrap}
+    .eyebrow{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#bc7e77;margin:36px 0 8px}h1{font:600 clamp(31px,6vw,46px)/1.1 'Playfair Display',Georgia,serif;margin:0 0 10px}p{margin:0;color:#7c8a7e;line-height:1.5}.top{align-items:flex-end;flex-wrap:wrap}.primary{border:0;color:white;background:#ed777a;border-radius:99px;font:700 14px 'DM Sans',sans-serif;padding:14px 21px;cursor:pointer;box-shadow:0 9px 22px #df838041}.primary:hover{background:#df656a}
+    .shell{background:white;border:1px solid #f0e6de;border-radius:26px;box-shadow:0 18px 50px #866c5614;margin-top:28px;padding:23px}.weekbar{margin-bottom:18px}.weekbar strong{font-size:17px}.arrows{display:flex;gap:7px}.arrow{width:36px;height:36px;border:1px solid #e5e9df;border-radius:12px;background:#fdfdf9;color:#47634e;font-size:21px;cursor:pointer}
+    .days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}.day{border:1px solid transparent;background:#f8f9f4;border-radius:14px;padding:10px 3px;text-align:center;cursor:pointer;color:#637364}.day .dow{display:block;font-size:11px;font-weight:700}.day .num{display:block;font-size:18px;font-weight:700;margin:5px 0}.day .dot{display:block;height:5px;width:5px;border-radius:50%;margin:auto;background:transparent}.day.has .dot{background:#ec8788}.day.active{background:#ee777a;color:#fff}.day.active .dot{background:white}.day:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #7ba98b;outline-offset:2px}
+    .section-title{margin:28px 0 14px}.section-title h2{font:600 25px 'Playfair Display',Georgia,serif;margin:0}.muted{font-size:12px;color:#98a298}.appointments{display:grid;gap:10px}.appt{justify-content:flex-start;align-items:stretch;background:#fbfbf7;border:1px solid #edf0e8;border-radius:18px;padding:16px}.hour{min-width:71px;border-right:1px solid #e4e9e0;padding:6px 12px 6px 0;font-weight:700;color:#45634c;white-space:nowrap}.detail{flex:1}.detail strong{display:block;font-size:15px;margin-bottom:5px}.detail span{display:block;color:#849285;font-size:12px}.tag{align-self:center;color:#ad7374;background:#fff0eb;padding:7px 10px;border-radius:30px;font-size:11px;font-weight:700}.empty{padding:35px;text-align:center;background:#fbfbf7;border-radius:18px;color:#819083}.empty .flower{font-size:30px;display:block;margin-bottom:10px}
+    .notice{margin-top:19px;border-radius:14px;background:#fff7eb;border:1px solid #f6e4ce;color:#96765a;font-size:12px;line-height:1.6;padding:13px 15px}.footer{color:#9a9f94;font-size:12px;text-align:center;margin-top:24px}
+    dialog{border:0;border-radius:25px;padding:0;width:min(94vw,450px);box-shadow:0 25px 90px #243b2d66;color:#425746}dialog::backdrop{background:#223b2a77}.modal{padding:26px}.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.modal h2{font:600 28px 'Playfair Display',Georgia,serif;margin:0}.close{border:0;background:#f5f5ef;border-radius:50%;font-size:24px;width:34px;height:34px;cursor:pointer;color:#59705d}label{display:block;font-size:12px;font-weight:700;margin:14px 0 7px}input,select{width:100%;padding:13px;border:1px solid #e3e8dc;border-radius:12px;background:#fffdfa;color:#435b47;font:500 14px 'DM Sans',sans-serif}input::placeholder{color:#adb7aa}.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.actions{margin-top:22px}.secondary{background:transparent;border:1px solid #e4e6dc;border-radius:99px;padding:13px 18px;color:#718273;font:700 13px 'DM Sans';cursor:pointer}.message{font-size:12px;color:#b16462;margin-top:10px;min-height:18px}
+    @media(max-width:500px){main{padding:18px 13px 60px}.shell{padding:18px 13px}.badge{font-size:9px}.top{align-items:center}.top p{max-width:280px}.primary{padding:12px 17px}.appt{padding:13px 10px;gap:9px}.hour{min-width:65px;padding-right:9px}.tag{font-size:10px;padding:5px 8px}.day{padding:9px 1px}.day .num{font-size:16px}.day .dow{font-size:10px}}
+  </style>
+</head>
+<body>
+<main>
+  <header class="brand"><a class="logo" href="./" aria-label="Ir a Flora"><span class="mark" aria-hidden="true">✿</span><span>flora.</span></a><span class="badge">VISTA DE PRUEBA</span></header>
+  <div class="eyebrow">Flora OS · Agenda</div>
+  <div class="top"><div><h1>Tu tiempo, en armonía.</h1><p>Sesiones, cursos y encuentros en un solo lugar.</p></div><button class="primary" id="nuevo" type="button">+ Nuevo turno</button></div>
+  <section class="shell" aria-label="Calendario semanal">
+    <div class="weekbar"><strong id="mes"></strong><div class="arrows"><button class="arrow" id="anterior" aria-label="Semana anterior">‹</button><button class="arrow" id="siguiente" aria-label="Semana siguiente">›</button></div></div>
+    <div class="days" id="dias" aria-label="Elegir día"></div>
+    <div class="section-title"><h2 id="tituloDia">Turnos del día</h2><span class="muted" id="cantidad"></span></div>
+    <div class="appointments" id="lista" aria-live="polite"></div>
+    <div class="notice"><strong>✦ Demostración interactiva.</strong> Los nombres y turnos iniciales son ficticios. Los turnos que crees aquí solo se mantienen mientras esta página está abierta: no se guardan, no se sincronizan con Google Calendar y no modifican datos de Lucy.</div>
+  </section>
+  <p class="footer">flora OS · Hecho para crecer con vos 🌿</p>
+</main>
+<dialog id="modal" aria-labelledby="modalTitulo"><form class="modal" id="form"><div class="modal-head"><h2 id="modalTitulo">Nuevo turno</h2><button type="button" class="close" id="cerrar" aria-label="Cerrar">×</button></div>
+  <label for="cliente">Nombre del cliente</label><input id="cliente" name="cliente" maxlength="80" placeholder="Ej. Marta" required autocomplete="off">
+  <label for="servicio">Servicio</label><select id="servicio" name="servicio"><option>Tarot</option><option>Carta astral</option><option>Revolución solar</option><option>Curso / taller</option><option>Otro encuentro</option></select>
+  <label for="fecha">Fecha</label><input id="fecha" name="fecha" type="date" required>
+  <div class="form-row"><div><label for="hora">Hora de inicio</label><input id="hora" name="hora" type="time" value="16:00" required></div><div><label for="duracion">Duración</label><select id="duracion"><option value="30">30 minutos</option><option value="60" selected>1 hora</option><option value="90">1 h 30 min</option><option value="120">2 horas</option></select></div></div>
+  <div class="message" id="error" role="status"></div><div class="actions"><button class="secondary" type="button" id="descartar">Cancelar</button><button class="primary" type="submit">Agregar a la prueba</button></div>
+</form></dialog>
+<script src="./src/agenda.js"></script>
+</body></html>
