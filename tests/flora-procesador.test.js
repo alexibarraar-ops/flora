@@ -117,3 +117,51 @@ test('unidades incorrectas y cantidades negativas nunca se registran', () => {
   assert.throws(()=>e.api.FLORA_registrarIngresoCompra({requestId:'COMPRA-003',confirmado:true,items:[{insumoId:'IN-001',cantidad:-12,unidad:'g'}]}),/positivo/);
   assert.equal(e.tablas.EVENTOS_STOCK.length,1);
 });
+
+function agregarLote(e,id,cantidad,vencimiento) {
+  const resultado={registrada:true,movimientos:[{tipo:'producto',id:'FL-001',cantidad,loteId:id,vencimiento}]};
+  e.tablas.EVENTOS_STOCK.push(['PREV-'+id,'2026-11-20','PRODUCCION','{}',JSON.stringify(resultado)]);
+}
+
+test('venta usa primero el lote con vencimiento más cercano (FEFO)', () => {
+  const e=entorno({conStock:false});
+  agregarLote(e,'L-TARDE',5,'2027-02-15');
+  agregarLote(e,'L-PRONTO',3,'2026-12-05');
+  const r=e.api.FLORA_registrarVenta({requestId:'VENTA-001',productoId:'FL-001',cantidad:4,clienteId:'CLI-01',confirmado:true});
+  assert.equal(r.registrada,true);
+  assert.deepEqual(Array.from(r.movimientos,x=>[x.loteId,x.cantidad]),[['L-PRONTO',-3],['L-TARDE',-1]]);
+  assert.equal(e.tablas.EVENTOS_STOCK.at(-1)[2],'VENTA');
+  assert.equal(JSON.parse(e.tablas.EVENTOS_STOCK.at(-1)[3]).clienteId,'CLI-01');
+});
+
+test('no vende lotes vencidos aunque existan unidades físicas', () => {
+  const e=entorno({conStock:false});
+  agregarLote(e,'L-VENCIDO',10,'2026-11-25');
+  const r=e.api.FLORA_registrarVenta({requestId:'VENTA-002',productoId:'FL-001',cantidad:1,confirmado:true});
+  assert.equal(r.registrada,false);
+  assert.equal(r.motivo,'STOCK_APTO_INSUFICIENTE');
+  assert.equal(e.tablas.EVENTOS_STOCK.length,2);
+});
+
+test('no vende más que el stock apto ni registra ventas duplicadas', () => {
+  const e=entorno({conStock:false});
+  agregarLote(e,'L-03',3,'2027-02-01');
+  const a={requestId:'VENTA-003',productoId:'FL-001',cantidad:2,confirmado:true};
+  assert.equal(e.api.FLORA_registrarVenta(a).registrada,true);
+  assert.equal(e.api.FLORA_registrarVenta(a).duplicada,true);
+  assert.equal(e.api.FLORA_registrarVenta({...a,requestId:'VENTA-004'}).registrada,false);
+  assert.equal(e.tablas.EVENTOS_STOCK.length,3);
+  assert.equal(e.lockLiberado(),true);
+});
+
+test('venta requiere confirmación y cantidad entera', () => {
+  const e=entorno({conStock:false});
+  assert.throws(()=>e.api.FLORA_registrarVenta({requestId:'VENTA-005',productoId:'FL-001',cantidad:1,confirmado:false}),/confirmación/);
+  assert.throws(()=>e.api.FLORA_registrarVenta({requestId:'VENTA-006',productoId:'FL-001',cantidad:1.5,confirmado:true}),/enteras/);
+});
+
+test('no permite reutilizar un identificador de lote de producción', () => {
+  const e=entorno();
+  agregarLote(e,'LOTE-01',1,'2027-02-01');
+  assert.throws(()=>e.api.FLORA_registrarProduccion(orden()),/LOTE_ID ya existe/);
+});
