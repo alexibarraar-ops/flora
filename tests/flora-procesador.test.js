@@ -281,6 +281,42 @@ test('agenda rechaza reservas inválidas sin escribir datos', () => {
   assert.equal(e.tablas.EVENTOS_STOCK.length,1);
 });
 
+test('ficha única reúne compras, sesiones, turnos y seguimiento sin escrituras', () => {
+  const e=entorno({conStock:false});
+  agregarVentaHistorica(e,'HIST-101','2026-09-01');
+  agregarVentaHistorica(e,'HIST-102','2026-10-01');
+  e.api.FLORA_registrarActividadCliente({requestId:'SESION-101',clienteId:'CLI-01',tipo:'SESION',servicio:'Tarot',fechaActividad:'2026-11-20',confirmado:true});
+  e.api.FLORA_reservarTurno(turno('TURNO-101'));
+  const antes=e.tablas.EVENTOS_STOCK.length;
+  const ficha=e.api.FLORA_consultarFichaCliente('CLI-01','2026-11-26');
+  assert.equal(ficha.nombre,'Cliente de prueba');
+  assert.equal(ficha.contactoAutorizado,true);
+  assert.deepEqual(Array.from(ficha.actividades,a=>a.tipo),['SESION','COMPRA','COMPRA']);
+  assert.equal(ficha.proximosTurnos.length,1);
+  assert.equal(ficha.proximosTurnos[0].turnoId,'TURNO-101');
+  assert.equal(ficha.posiblesReposiciones.length,1);
+  assert.equal(e.tablas.EVENTOS_STOCK.length,antes);
+});
+
+test('ficha única no propone contactar a clientes sin consentimiento', () => {
+  const e=entorno({conStock:false});
+  agregarVentaHistorica(e,'HIST-103','2026-09-01','CLI-02');
+  agregarVentaHistorica(e,'HIST-104','2026-10-01','CLI-02');
+  const ficha=e.api.FLORA_consultarFichaCliente('CLI-02','2026-11-26');
+  assert.equal(ficha.contactoAutorizado,false);
+  assert.equal(ficha.actividades.length,2);
+  assert.equal(ficha.posiblesReposiciones.length,0);
+  assert.throws(()=>e.api.FLORA_consultarFichaCliente('INEXISTENTE','2026-11-26'),/Cliente no registrado/);
+});
+
+test('búsqueda interna de clientes ignora tildes, limita resultados y exige texto', () => {
+  const e=entorno({conStock:false});
+  e.tablas.CLIENTES.push(['CLI-03','María Elena','SI']);
+  assert.equal(e.api.FLORA_buscarClientes('maria').length,1);
+  assert.equal(e.api.FLORA_buscarClientes('maria')[0].clienteId,'CLI-03');
+  assert.throws(()=>e.api.FLORA_buscarClientes('m'),/al menos dos caracteres/);
+});
+
 test('no vende lotes vencidos aunque existan unidades físicas', () => {
   const e=entorno({conStock:false});
   agregarLote(e,'L-VENCIDO',10,'2026-11-25');
