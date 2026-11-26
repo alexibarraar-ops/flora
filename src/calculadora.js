@@ -42,7 +42,28 @@
       envasado:redondear(b.salidaBase*factor),
       merma:redondear((b.entradaBase-b.salidaBase)*factor)};
   }
-  const api = { calcularIngredientes, calcularBalance };
+  function importarBorradores(texto) {
+    if (typeof texto !== 'string' || texto.length > 250000) throw new Error('La tabla es demasiado grande');
+    const filas = texto.trim().split(/\r?\n/).map(l => l.split('\t'));
+    const cabecera = ['PRODUCTO_ID','INSUMO_ID','INSUMO','CANTIDAD_POR_UNIDAD','UNIDAD','RENDIMIENTO_UNIDADES','ESTADO'];
+    if (!filas.length || cabecera.some((v,i)=>filas[0][i]?.trim()!==v)) throw new Error('Copiá el rango completo de BORRADOR_RECETAS, incluyendo los títulos');
+    const grupos = new Map();
+    for (const fila of filas.slice(1)) {
+      if (fila.every(v=>!v.trim())) continue;
+      const [id,insumoId,nombre,cant,unidad,rendimiento,estado,observacion=''] = fila.map(v=>v.trim());
+      const cantidad = Number(cant.replace(',','.'));
+      const base = Number(rendimiento.replace(',','.'));
+      if (!/^FL-\d{3}$/.test(id) || !/^IN-\d{3}$/.test(insumoId) || !nombre || !unidad || !Number.isFinite(cantidad) || cantidad<=0 || !Number.isInteger(base) || base<1 || estado!=='PENDIENTE') throw new Error(`Fila inválida de borradores: ${id||'sin producto'}`);
+      if (!grupos.has(id)) grupos.set(id,{id,rendimiento:1,ingredientes:[],advertencias:[]});
+      const grupo=grupos.get(id);
+      if (grupo.ingredientes.some(x=>x.insumoId===insumoId)) throw new Error(`Insumo repetido en ${id}: ${insumoId}`);
+      grupo.ingredientes.push({insumoId,nombre,cantidad,unidad});
+      if (observacion) grupo.advertencias.push(`${nombre}: ${observacion}`);
+    }
+    if (!grupos.size || grupos.size>100 || filas.length>500) throw new Error('No se encontraron recetas válidas');
+    return [...grupos.values()];
+  }
+  const api = { calcularIngredientes, calcularBalance, importarBorradores };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.FloraCalculadora = api;
 })(typeof globalThis === 'object' ? globalThis : this);
