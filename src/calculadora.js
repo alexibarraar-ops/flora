@@ -22,7 +22,27 @@
       };
     });
   }
-  const api = { calcularIngredientes };
+  function calcularBalance(receta, cantidad) {
+    calcularIngredientes(receta, cantidad);
+    if (!receta.balance) return null;
+    const b = receta.balance;
+    if (!b.ingrediente || !b.unidad || typeof b.entradaBase !== 'number' || !Number.isFinite(b.entradaBase) || b.entradaBase <= 0 ||
+        typeof b.salidaBase !== 'number' || !Number.isFinite(b.salidaBase) || b.salidaBase <= 0 || b.salidaBase > b.entradaBase) {
+      throw new Error('Balance de elaboración inválido');
+    }
+    const componentes = receta.ingredientes.filter(i => i.nombre === b.ingrediente);
+    if (!componentes.length || componentes.some(i => i.unidad !== b.unidad) ||
+        Math.abs(componentes.reduce((n,i)=>n+i.cantidad,0)-b.entradaBase)>1e-6) {
+      throw new Error('El balance no coincide con los ingredientes de la receta');
+    }
+    const factor = cantidad / receta.rendimiento;
+    const redondear=n=>Math.round((n+Number.EPSILON)*1e4)/1e4;
+    return {ingrediente:b.ingrediente,unidad:b.unidad,
+      utilizado:redondear(b.entradaBase*factor),
+      envasado:redondear(b.salidaBase*factor),
+      merma:redondear((b.entradaBase-b.salidaBase)*factor)};
+  }
+  const api = { calcularIngredientes, calcularBalance };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.FloraCalculadora = api;
 })(typeof globalThis === 'object' ? globalThis : this);
