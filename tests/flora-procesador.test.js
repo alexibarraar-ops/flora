@@ -17,14 +17,16 @@ function entorno({ activo = 'SI', conStock = true } = {}) {
     {tipo:'insumo',id:'IN-001',cantidad:200},{tipo:'insumo',id:'IN-002',cantidad:5},
   ]})]);
   let lockTaken=false;
-  const hoja = (nombre) => ({
+  const hoja = (nombre) => !tablas[nombre] ? null : ({
     getDataRange: () => ({getValues:()=>tablas[nombre].map(r=>r.slice())}),
+    getLastColumn:()=>tablas[nombre][0].length,
+    getRange:(_fila,_col,_alto,ancho)=>({getValues:()=>[tablas[nombre][0].slice(0,ancho)]}),
     appendRow: (r) => { tablas[nombre].push(r.slice()); },
   });
   const globals = {
     Number,Date,JSON,Math,Error,RegExp,String,Object,Array,isFinite,
     PropertiesService:{getScriptProperties:()=>({getProperty:()=> 'archivo-ficticio'})},
-    SpreadsheetApp:{openById:()=>({getSheetByName:hoja}),flush:()=>{}},
+    SpreadsheetApp:{openById:()=>({getSheetByName:hoja,getSpreadsheetTimeZone:()=> 'America/Buenos_Aires',getName:()=> 'FLORA_OS_DB_DEMO'}),flush:()=>{}},
     LockService:{getScriptLock:()=>({tryLock:()=>{lockTaken=true;return true},releaseLock:()=>{lockTaken=false}})},
     Utilities:{formatDate:()=> '2026-11-26'},
   };
@@ -40,6 +42,27 @@ test('vista previa calcula insumos y envases', () => {
   const r=api.FLORA_calcularProduccion(orden());
   assert.equal(r.cantidad,3);
   assert.deepEqual(Array.from(r.consumo,x=>x.cantidad),[120,3]);
+});
+
+test('verificador privado informa estructura incompleta sin alterar tablas',()=>{
+  const e=entorno();
+  const antes=JSON.stringify(e.tablas);
+  const r=e.api.FLORA_verificarConexionPrivada();
+  assert.equal(r.preparado,false);
+  assert.ok(Array.from(r.faltanHojas).includes('VENTAS'));
+  assert.equal(r.modo,'SOLO_LECTURA');
+  assert.equal(JSON.stringify(e.tablas),antes);
+});
+
+test('verificador privado confirma estructura mínima cuando está completa',()=>{
+  const e=entorno();
+  e.tablas.VENTAS=[['VENTA_ID']];
+  e.tablas.OPERACIONES_IA=[['REQUEST_ID']];
+  e.tablas.REVISION_RECETAS=[['PRODUCTO_ID','ESTADO']];
+  const r=e.api.FLORA_verificarConexionPrivada();
+  assert.equal(r.preparado,true);
+  assert.equal(r.zonaHoraria,'America/Buenos_Aires');
+  assert.equal(r.faltanColumnas.length,0);
 });
 
 test('catálogo privado muestra solo fórmulas activas y coherentes', () => {
