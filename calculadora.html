@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f36c70">
+  <meta name="description" content="Calculadora de producción Flora OS: prototipo de prueba sin movimientos de stock.">
+  <title>Calculadora de producción · Flora OS</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600&display=swap');
+    :root{font-family:'DM Sans',Arial,sans-serif;color:#3f5144;background:#fffaf6}*{box-sizing:border-box}
+    body{margin:0;min-height:100vh;background:radial-gradient(circle at 85% 4%,#ffe4da 0,transparent 36%),radial-gradient(circle at 2% 93%,#e7efdf 0,transparent 39%),#fffaf6}
+    main{max-width:650px;margin:0 auto;padding:26px 18px 72px}.brand{display:flex;align-items:center;justify-content:space-between;gap:8px}.logo{display:flex;align-items:center;gap:10px;font-size:23px;font-weight:700;letter-spacing:-1px}.mark{display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:#f16d72;color:white;font-size:24px}.badge{font-size:11px;font-weight:700;padding:9px 12px;border-radius:40px;background:#fff1ea;color:#bb7774;border:1px solid #f6dad1}
+    .eyebrow{font-size:11px;letter-spacing:2px;font-weight:700;color:#bd7d78;text-transform:uppercase;margin:38px 0 6px}h1{font:600 clamp(30px,6vw,45px)/1.15 'Playfair Display',Georgia,serif;color:#405844;margin:5px 0 10px}p{line-height:1.6;color:#79857a;margin:0}.card{background:#fff;border:1px solid #f1e7df;border-radius:25px;box-shadow:0 20px 65px #8b6f6115;padding:26px;margin-top:25px}
+    label{display:block;font-size:12px;font-weight:700;color:#59675b;margin:0 0 9px}.select{width:100%;border:1px solid #e7e9df;background:#fcfcf8;color:#415545;border-radius:13px;padding:16px 14px;font:600 15px 'DM Sans',Arial,sans-serif;cursor:pointer}.row{display:flex;align-items:center;justify-content:space-between;gap:16px}.spacer{height:26px}.counter{display:flex;gap:12px;align-items:center}.step{width:43px;height:43px;background:#fff8f5;border:1px solid #f2d8d0;border-radius:13px;color:#d36e6f;font:700 24px 'DM Sans';cursor:pointer}.step:disabled{opacity:.35;cursor:default}.count{font-size:31px;font-weight:700;min-width:36px;text-align:center;font-variant-numeric:tabular-nums}
+    .recipe{margin-top:25px;padding-top:20px;border-top:1px solid #efe9e2}.recipe h2{font:600 24px 'Playfair Display',Georgia,serif;margin:0 0 3px;color:#405844}.hint{font-size:12px;margin-bottom:17px}.ingredient{display:flex;gap:16px;align-items:baseline;justify-content:space-between;padding:11px 0;border-bottom:1px solid #f2eee9}.ingredient:last-child{border-bottom:0}.ingredient span{font-size:14px;color:#596b5d}.ingredient strong{font-size:15px;white-space:nowrap;color:#455849;font-variant-numeric:tabular-nums}
+    .actions{margin-top:22px;display:flex;gap:10px}.copy{width:100%;border:none;border-radius:99px;padding:15px 18px;color:#fff;background:#ed7477;font:700 14px 'DM Sans';cursor:pointer}.copy:hover{background:#d96569}.notice{font-size:12px;line-height:1.55;background:#fff6e9;border:1px solid #f6e4ce;color:#98765c;border-radius:12px;padding:13px 14px;margin-top:19px}.foot{margin-top:22px;text-align:center;font-size:12px;color:#9a9f94}#feedback{min-height:20px;margin-top:10px;text-align:center;font-size:12px;color:#637a64}
+    @media(max-width:440px){main{padding:20px 14px 55px}.badge{font-size:10px}.card{padding:19px 17px}.row{gap:8px}.counter{gap:8px}.step{width:40px;height:40px}}
+  </style>
+</head>
+<body>
+<main>
+  <header class="brand"><div class="logo"><span class="mark" aria-hidden="true">✿</span><span>flora.</span></div><span class="badge">VERSIÓN DE PRUEBA</span></header>
+  <div class="eyebrow">Flora OS · Producción</div>
+  <h1>¿Qué vamos a preparar hoy?</h1>
+  <p>Elegí un producto y la cantidad. Flora calcula los ingredientes por vos.</p>
+  <section class="card" aria-label="Calculadora de producción">
+    <label for="producto">Producto</label>
+    <select id="producto" class="select"></select>
+    <div class="spacer"></div>
+    <div class="row">
+      <div><label for="cantidad">Cantidad a preparar</label><p style="font-size:12px">Unidades</p></div>
+      <div class="counter"><button id="menos" class="step" type="button" aria-label="Restar una unidad">−</button><output id="cantidad" class="count" aria-live="polite">5</output><button id="mas" class="step" type="button" aria-label="Sumar una unidad">+</button></div>
+    </div>
+    <div class="recipe"><h2>Ingredientes necesarios</h2><p class="hint" id="base"></p><div id="ingredientes" aria-live="polite"></div></div>
+    <div class="actions"><button class="copy" type="button" id="copiar">Copiar lista de ingredientes</button></div>
+    <div id="feedback" role="status"></div>
+    <div class="notice">✦ <strong>Solo demostración.</strong> Estas fórmulas son ficticias. Todavía no está conectado al stock ni a las recetas validadas de Lucy. No usar para fabricar.</div>
+  </section>
+  <div class="foot">flora OS · Hecho para crecer con vos 🌿</div>
+</main>
+<script src="./src/calculadora.js"></script>
+<script>
+  const ejemplos = [
+    {nombre:'Shampoo sólido · Ejemplo',rendimiento:4,ingredientes:[{nombre:'Base vegetal ficticia',cantidad:240,unidad:'g'},{nombre:'Ingrediente botánico ficticio',cantidad:40,unidad:'g'},{nombre:'Aceite vegetal ficticio',cantidad:20,unidad:'ml'},{nombre:'Envoltorio',cantidad:4,unidad:'unidad'},{nombre:'Etiqueta',cantidad:4,unidad:'unidad'}]},
+    {nombre:'Crema botánica · Ejemplo',rendimiento:5,ingredientes:[{nombre:'Base de crema ficticia',cantidad:250,unidad:'g'},{nombre:'Extracto vegetal ficticio',cantidad:25,unidad:'ml'},{nombre:'Pote',cantidad:5,unidad:'unidad'},{nombre:'Etiqueta',cantidad:5,unidad:'unidad'}]},
+  ];
+  const select=document.getElementById('producto');
+  ejemplos.forEach((x,i)=>{const opt=document.createElement('option');opt.value=String(i);opt.textContent=x.nombre;select.append(opt)});
+  let cantidad=5;
+  const formato=new Intl.NumberFormat('es-AR',{maximumFractionDigits:4});
+  function lista(){return FloraCalculadora.calcularIngredientes(ejemplos[Number(select.value)],cantidad)}
+  function pintar(){
+    document.getElementById('cantidad').textContent=String(cantidad);
+    document.getElementById('menos').disabled=cantidad===1;
+    document.getElementById('mas').disabled=cantidad===200;
+    document.getElementById('base').textContent=`Receta base: ${ejemplos[Number(select.value)].rendimiento} unidades`;
+    const cont=document.getElementById('ingredientes');cont.replaceChildren();
+    lista().forEach(x=>{const row=document.createElement('div');row.className='ingredient';const n=document.createElement('span');n.textContent=x.nombre;const q=document.createElement('strong');const unidad=x.unidad==='unidad'&&x.cantidad!==1?'unidades':x.unidad;q.textContent=`${formato.format(x.cantidad)} ${unidad}`;row.append(n,q);cont.append(row)});
+    document.getElementById('feedback').textContent='';
+  }
+  document.getElementById('menos').addEventListener('click',()=>{cantidad=Math.max(1,cantidad-1);pintar()});
+  document.getElementById('mas').addEventListener('click',()=>{cantidad=Math.min(200,cantidad+1);pintar()});
+  select.addEventListener('change',pintar);
+  document.getElementById('copiar').addEventListener('click',async()=>{
+    const contenido=`${ejemplos[Number(select.value)].nombre} · ${cantidad} unidades\n`+lista().map(x=>`${x.nombre}: ${formato.format(x.cantidad)} ${x.unidad==='unidad'&&x.cantidad!==1?'unidades':x.unidad}`).join('\n')+'\n\nDEMO · No usar para fabricar';
+    try{await navigator.clipboard.writeText(contenido);document.getElementById('feedback').textContent='Lista copiada'}catch{document.getElementById('feedback').textContent='No se pudo copiar automáticamente'}
+  });
+  pintar();
+</script>
+</body>
+</html>
