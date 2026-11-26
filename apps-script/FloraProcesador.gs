@@ -521,3 +521,49 @@ function FLORA_consultarAgenda(desde, hasta) {
   turnos.sort(function(a,b) { return a.inicio.localeCompare(b.inicio); });
   return { desde: desde, hasta: hasta, turnos: turnos, total: turnos.length };
 }
+
+/** Búsqueda interna para la pantalla CRM; devuelve solo identificador y nombre. */
+function FLORA_buscarClientes(texto) {
+  if (typeof texto !== 'string' || texto.trim().length < 2 || texto.length > 100) {
+    throw new Error('Ingresá al menos dos caracteres para buscar clientes');
+  }
+  var clave = texto.trim().toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  return FLORA_filas_('CLIENTES').filter(function(c) {
+    return String(c.NOMBRE || '').toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g,'').indexOf(clave) !== -1;
+  }).slice(0, 20).map(function(c) {
+    return { clienteId: String(c.CLIENTE_ID), nombre: String(c.NOMBRE) };
+  });
+}
+
+/** Vista unificada para pantalla interna o secretaria autorizada; no realiza escrituras. */
+function FLORA_consultarFichaCliente(clienteId, fechaReferencia) {
+  FLORA_validarFechaReferencia_(fechaReferencia);
+  if (typeof clienteId !== 'string' || !clienteId.trim()) throw new Error('Cliente obligatorio');
+  var clientes = FLORA_filas_('CLIENTES').filter(function(c) { return String(c.CLIENTE_ID) === clienteId; });
+  if (clientes.length !== 1) throw new Error('Cliente no registrado o CLIENTE_ID duplicado');
+  var cliente = clientes[0];
+  var eventos = FLORA_eventos_(FLORA_hoja_('EVENTOS_STOCK'));
+  var actividades = [];
+  eventos.forEach(function(e) {
+    if (e.resultado.registrada !== true || e.datos.clienteId !== clienteId) return;
+    if (e.tipo === 'VENTA') {
+      actividades.push({ fecha: e.fecha, tipo: 'COMPRA', referencia: e.datos.productoId,
+        cantidad: e.datos.cantidad, requestId: e.id });
+    } else if (e.tipo === 'ACTIVIDAD_CLIENTE') {
+      actividades.push({ fecha: e.datos.fechaActividad, tipo: e.datos.tipo,
+        referencia: e.datos.servicio, requestId: e.id });
+    }
+  });
+  actividades.sort(function(a,b) { return b.fecha.localeCompare(a.fecha); });
+  var turnos = FLORA_turnos_(eventos).filter(function(t) {
+    return t.clienteId === clienteId && t.estado === 'CONFIRMADO' && t.fin.slice(0,10) >= fechaReferencia;
+  }).sort(function(a,b) { return a.inicio.localeCompare(b.inicio); });
+  var consentimiento = String(cliente.CONSENTIMIENTO_CONTACTO).toUpperCase() === 'SI';
+  var compras = actividades.filter(function(a) { return a.tipo === 'COMPRA'; });
+  var sugerencias = consentimiento ? FLORA_estimarReposiciones_(compras.map(function(c) {
+    return { fecha: c.fecha, productoId: c.referencia };
+  }),fechaReferencia).filter(function(s) { return s.estado === 'POSIBLE_REPOSICION'; }) : [];
+  return { clienteId: clienteId, nombre: String(cliente.NOMBRE || ''), contactoAutorizado: consentimiento,
+    actividades: actividades, proximosTurnos: turnos, posiblesReposiciones: sugerencias,
+    aviso: 'Consulta interna, sin cambios ni mensajes enviados. No exponer sin autenticación.' };
+}
