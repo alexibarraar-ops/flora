@@ -57,7 +57,8 @@ function FLORA_eventos_(hoja) {
   datos.shift();
   return datos.filter(function(r) { return r[0] !== ''; }).map(function(r) {
     if (!r[4]) throw new Error('Evento incompleto: ' + r[0]);
-    return { id: String(r[0]), tipo: String(r[2]), resultado: JSON.parse(String(r[4])) };
+    return { id: String(r[0]), fecha: String(r[1]), tipo: String(r[2]),
+      datos: r[3] ? JSON.parse(String(r[3])) : {}, resultado: JSON.parse(String(r[4])) };
   });
 }
 
@@ -207,7 +208,7 @@ function FLORA_registrarIngresoCompra(orden) { return FLORA_registrarIngresoInsu
 
 /**
  * Registra ventas de productos terminados con asignación FEFO de lotes aptos.
- * No factura ni manda mensajes; el clienteId se conserva para integrar CRM.
+ * No factura ni manda mensajes; valida el clienteId cuando se informa.
  */
 function FLORA_registrarVenta(orden) {
   FLORA_validarRequest_(orden);
@@ -224,6 +225,12 @@ function FLORA_registrarVenta(orden) {
     var eventos = FLORA_eventos_(hoja);
     var existente = eventos.filter(function(e) { return e.id === orden.requestId; })[0];
     if (existente) return { duplicada: true, resultado: existente.resultado };
+    if (orden.clienteId) {
+      var clientes = FLORA_filas_('CLIENTES').filter(function(c) {
+        return String(c.CLIENTE_ID) === orden.clienteId;
+      });
+      if (clientes.length !== 1) throw new Error('Cliente no registrado o CLIENTE_ID duplicado');
+    }
     var producto = FLORA_filas_('PRODUCTOS').filter(function(p) { return p.PRODUCTO_ID === orden.productoId; })[0];
     if (!producto) throw new Error('Producto inexistente');
     var fecha = Utilities.formatDate(new Date(), 'America/Argentina/Buenos_Aires', 'yyyy-MM-dd');
@@ -245,4 +252,18 @@ function FLORA_registrarVenta(orden) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/** Historial real de compras asociado al cliente; solo lectura y sin mensajes automáticos. */
+function FLORA_historialCliente(clienteId) {
+  if (typeof clienteId !== 'string' || !clienteId.trim()) throw new Error('Cliente inválido');
+  var clientes = FLORA_filas_('CLIENTES').filter(function(c) { return String(c.CLIENTE_ID) === clienteId; });
+  if (clientes.length !== 1) throw new Error('Cliente no registrado o CLIENTE_ID duplicado');
+  var eventos = FLORA_eventos_(FLORA_hoja_('EVENTOS_STOCK'));
+  return eventos.filter(function(e) {
+    return e.tipo === 'VENTA' && e.resultado.registrada === true && e.datos.clienteId === clienteId;
+  }).map(function(e) {
+    return { requestId: e.id, fecha: e.fecha, productoId: e.datos.productoId,
+      cantidad: e.datos.cantidad };
+  });
 }
