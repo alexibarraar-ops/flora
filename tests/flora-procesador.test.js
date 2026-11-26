@@ -243,6 +243,44 @@ test('prepara borradores de reposición y sesión sin enviar mensajes', () => {
   assert.equal(e.tablas.EVENTOS_STOCK.length,4);
 });
 
+const turno=(id='TURNO-001',inicio='2027-01-15T16:00',fin='2027-01-15T17:00')=>({
+  requestId:id,clienteId:'CLI-01',servicio:'Tarot',inicio,fin,confirmado:true
+});
+
+test('agenda reserva sin superponer turnos y permite horarios consecutivos', () => {
+  const e=entorno({conStock:false});
+  const a=e.api.FLORA_reservarTurno(turno());
+  assert.equal(a.registrada,true);
+  assert.equal(e.api.FLORA_reservarTurno(turno()).duplicada,true);
+  const b=e.api.FLORA_reservarTurno(turno('TURNO-002','2027-01-15T16:30','2027-01-15T17:30'));
+  assert.equal(b.registrada,false);
+  assert.equal(b.motivo,'HORARIO_OCUPADO');
+  assert.equal(e.api.FLORA_reservarTurno(turno('TURNO-003','2027-01-15T17:00','2027-01-15T18:00')).registrada,true);
+  assert.equal(e.api.FLORA_consultarAgenda('2027-01-15T00:00','2027-01-16T00:00').total,2);
+  assert.equal(e.tablas.EVENTOS_STOCK.length,3);
+});
+
+test('agenda cancela sin borrar historial y libera el horario', () => {
+  const e=entorno({conStock:false});
+  e.api.FLORA_reservarTurno(turno());
+  const cancelar={requestId:'CANCEL-001',turnoId:'TURNO-001',confirmado:true};
+  assert.equal(e.api.FLORA_cancelarTurno(cancelar).estado,'CANCELADO');
+  assert.equal(e.api.FLORA_cancelarTurno(cancelar).duplicada,true);
+  assert.equal(e.api.FLORA_consultarAgenda('2027-01-15T00:00','2027-01-16T00:00').total,0);
+  assert.equal(e.api.FLORA_reservarTurno(turno('TURNO-004')).registrada,true);
+  assert.equal(e.tablas.EVENTOS_STOCK.length,4);
+});
+
+test('agenda rechaza reservas inválidas sin escribir datos', () => {
+  const e=entorno({conStock:false});
+  assert.throws(()=>e.api.FLORA_reservarTurno({...turno(),confirmado:false}),/confirmación/);
+  assert.throws(()=>e.api.FLORA_reservarTurno(turno('TURNO-005','2027-01-15T17:00','2027-01-15T16:00')),/Duración/);
+  assert.throws(()=>e.api.FLORA_reservarTurno(turno('TURNO-006','2027-01-15T25:00','2027-01-15T26:00')),/Hora inválida/);
+  assert.throws(()=>e.api.FLORA_reservarTurno({...turno('TURNO-007'),clienteId:'CLI-99'}),/Cliente no registrado/);
+  assert.throws(()=>e.api.FLORA_cancelarTurno({requestId:'CANCEL-999',turnoId:'TURNO-001',confirmado:true}),/Turno inexistente/);
+  assert.equal(e.tablas.EVENTOS_STOCK.length,1);
+});
+
 test('no vende lotes vencidos aunque existan unidades físicas', () => {
   const e=entorno({conStock:false});
   agregarLote(e,'L-VENCIDO',10,'2026-11-25');
