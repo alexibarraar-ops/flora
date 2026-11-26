@@ -37,6 +37,12 @@ El archivo `apps-script/FloraProcesador.gs` es un **prototipo de procesador** pa
 - `FLORA_cancelarTurno` cancela por identificador, mediante un nuevo evento inmutable, sin borrar el original. Repetir el mismo `REQUEST_ID` no duplica la cancelación.
 - `FLORA_consultarAgenda(desde, hasta)` devuelve turnos vigentes de hasta 31 días; es de solo lectura. Los datos se derivan de `EVENTOS_STOCK`, sin hojas o calendarios paralelos que puedan quedar desincronizados.
 - **Pendiente**: zona horaria y validación fina de hora actual, horarios de atención, descansos, duración por servicio, reprogramación, disponibilidad externa, autorización por usuaria y sincronización unidireccional segura con un calendario propiedad de Lucy. No se crearon eventos en Google Calendar. Nunca incluir detalles íntimos de las sesiones en eventos sincronizados.
+
+## Lectura unificada para CRM y futura voz (no instalada)
+
+- `FLORA_buscarClientes(texto)` permite localizar hasta 20 clientes por nombre con al menos dos letras, ignorando tildes; devuelve solamente nombre e identificador, no teléfonos ni observaciones.
+- `FLORA_consultarFichaCliente(clienteId, fechaReferencia)` reúne desde las fuentes oficiales: compras, sesiones/cursos realizados, turnos futuros confirmados y posibles reposiciones. Reconstruye una ficha sin generar nuevas filas, notificaciones o mensajes. Las posibles reposiciones solo figuran cuando existe consentimiento de contacto.
+- Estas funciones son **internas**; siguen sin autorización web configurada. La interfaz y la secretaria virtual deberán pasar por una capa privada de autenticación antes de poder utilizarlas con datos de Lucy. Las demos públicas de `clientes.html`, `agenda.html` y `reservas.html` permanecen completamente ficticias.
 - Reconstruye los saldos de los lotes desde `EVENTOS_STOCK` y elige primero los lotes aptos con vencimiento más cercano (**FEFO**).
 - Rechaza ventas sin unidades suficientes **no vencidas**. Un reintento con el mismo `REQUEST_ID` no vuelve a descontar.
 - Una venta puede descontar de varios lotes. Los lotes vencidos permanecen en el historial, pero quedan excluidos de la venta.
