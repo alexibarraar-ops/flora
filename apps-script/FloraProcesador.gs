@@ -224,6 +224,9 @@ function FLORA_registrarVenta(orden) {
     var eventos = FLORA_eventos_(hoja);
     var existente = eventos.filter(function(e) { return e.id === orden.requestId; })[0];
     if (existente) return { duplicada: true, resultado: existente.resultado };
+    if (orden.clienteId && !FLORA_filas_('CLIENTES').some(function(c) {
+      return String(c.CLIENTE_ID) === orden.clienteId;
+    })) throw new Error('Cliente no registrado en CRM');
     var producto = FLORA_filas_('PRODUCTOS').filter(function(p) { return p.PRODUCTO_ID === orden.productoId; })[0];
     if (!producto) throw new Error('Producto inexistente');
     var fecha = Utilities.formatDate(new Date(), 'America/Argentina/Buenos_Aires', 'yyyy-MM-dd');
@@ -245,4 +248,57 @@ function FLORA_registrarVenta(orden) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/** Historial de compras confirmado en el libro oficial; no duplica registros. */
+function FLORA_historialCliente(clienteId) {
+  if (typeof clienteId !== 'string' || !clienteId.trim()) throw new Error('Cliente obligatorio');
+  var cliente = FLORA_filas_('CLIENTES').filter(function(c) {
+    return String(c.CLIENTE_ID) === clienteId;
+  })[0];
+  if (!cliente) throw new Error('Cliente no registrado en CRM');
+  var datos = FLORA_asegurarEventos_().getDataRange().getValues();
+  datos.shift();
+  var compras = datos.filter(function(f) { return f[2] === 'VENTA' && f[4]; }).map(function(f) {
+    var detalle = JSON.parse(String(f[3]));
+    if (detalle.clienteId !== clienteId) return null;
+    var resultado = JSON.parse(String(f[4]));
+    if (resultado.registrada !== true) return null;
+    return { actividadId: 'VENTA-' + String(f[0]), tipo: 'COMPRA', referenciaId: String(f[0]),
+      fecha: String(f[1]), productoId: detalle.productoId, cantidad: detalle.cantidad };
+  }).filter(function(c) { return c !== null; });
+  var actividades = FLORA_filas_('ACTIVIDADES_CLIENTE').filter(function(a) {
+    return String(a.CLIENTE_ID) === clienteId;
+  }).map(function(a) {
+    return { actividadId: String(a.ACTIVIDAD_ID), tipo: String(a.TIPO),
+      referenciaId: String(a.REFERENCIA_ID || ''), fecha: String(a.FECHA),
+      detalle: String(a.DETALLE || ''), proximoContacto: String(a.PROXIMO_CONTACTO || '') };
+  }).filter(function(a) { return !compras.some(function(c) { return c.referenciaId === a.referenciaId && a.tipo === 'COMPRA'; }); });
+  return { clienteId: clienteId, nombre: String(cliente.NOMBRE || ''),
+    consentimientoContacto: String(cliente.CONSENTIMIENTO_CONTACTO).toUpperCase() === 'SI',
+    actividades: compras.concat(actividades).sort(function(a,b) { return b.fecha.localeCompare(a.fecha); }) };
+}
+
+/** Sugerencias para revisión de Lucy: nunca envía mensajes ni escribe en Sheets. */
+function FLORA_prepararReposiciones(clienteId, fecha) {
+  if (typeof fecha !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(fecha) ||
+      !isFinite(Date.parse(fecha + 'T00:00:00Z'))) throw new Error('Fecha inválida');
+  var historial = FLORA_historialCliente(clienteId);
+  if (!historial.consentimientoContacto) return { clienteId: clienteId, sugerencias: [], motivo: 'SIN_CONSENTIMIENTO' };
+  var productos = {};
+  FLORA_filas_('PRODUCTOS').forEach(function(p) { productos[String(p.PRODUCTO_ID)] = p; });
+  var ultimas = {};
+  historial.actividades.filter(function(a) { return a.tipo === 'COMPRA'; }).forEach(function(a) {
+    if (!ultimas[a.productoId] || ultimas[a.productoId].fecha < a.fecha) ultimas[a.productoId] = a;
+  });
+  var sugerencias = Object.keys(ultimas).map(function(id) {
+    var dias = Number(productos[id] && productos[id].DIAS_REPOSICION);
+    if (!Number.isInteger(dias) || dias <= 0) return null;
+    var compra = ultimas[id];
+    var proxima = new Date(compra.fecha + 'T00:00:00Z');
+    proxima.setUTCDate(proxima.getUTCDate() + dias);
+    var fechaSugerida = proxima.toISOString().slice(0,10);
+    return fechaSugerida <= fecha ? { productoId: id, ultimaCompra: compra.fecha, fechaSugerida: fechaSugerida } : null;
+  }).filter(function(s) { return s !== null; });
+  return { clienteId: clienteId, sugerencias: sugerencias, requiereAprobacion: true };
 }
