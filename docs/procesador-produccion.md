@@ -19,7 +19,8 @@ El archivo `apps-script/FloraProcesador.gs` es un **prototipo de procesador** pa
 
 ## Venta de productos terminados (prototipo)
 
-- `FLORA_registrarVenta` recibe `REQUEST_ID`, producto, cantidad entera y confirmación. `clienteId` es opcional y se conserva en el evento para la integración futura del CRM.
+- `FLORA_registrarVenta` recibe `REQUEST_ID`, producto, cantidad entera y confirmación. `clienteId` es opcional; si se informa, debe existir una única vez en `CLIENTES`. Las ventas anónimas siguen permitidas.
+- `FLORA_historialCliente(clienteId)` consulta las compras verificadas de ese cliente desde `EVENTOS_STOCK`, sin duplicarlas en otra hoja ni enviar mensajes. Es una consulta de solo lectura y requiere que el cliente exista.
 - Reconstruye los saldos de los lotes desde `EVENTOS_STOCK` y elige primero los lotes aptos con vencimiento más cercano (**FEFO**).
 - Rechaza ventas sin unidades suficientes **no vencidas**. Un reintento con el mismo `REQUEST_ID` no vuelve a descontar.
 - Una venta puede descontar de varios lotes. Los lotes vencidos permanecen en el historial, pero quedan excluidos de la venta.
