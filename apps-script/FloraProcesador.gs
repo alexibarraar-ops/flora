@@ -567,3 +567,63 @@ function FLORA_consultarFichaCliente(clienteId, fechaReferencia) {
     actividades: actividades, proximosTurnos: turnos, posiblesReposiciones: sugerencias,
     aviso: 'Consulta interna, sin cambios ni mensajes enviados. No exponer sin autenticación.' };
 }
+
+/** Auditoría previa al arranque: consulta solamente, no activa productos ni inventa stock. */
+function FLORA_diagnosticarArranque() {
+  var productos = FLORA_filas_('PRODUCTOS');
+  var insumos = FLORA_filas_('INSUMOS');
+  var recetas = FLORA_filas_('RECETAS');
+  var insumoPorId = {};
+  var problemas = [];
+  var vistos = {};
+  insumos.forEach(function(i) {
+    var id = String(i.INSUMO_ID || '');
+    if (!id || vistos[id]) problemas.push({ tipo: 'INSUMO_ID_INVALIDO', referencia: id });
+    vistos[id] = true;
+    insumoPorId[id] = i;
+    if (!String(i.UNIDAD || '').trim()) problemas.push({ tipo: 'UNIDAD_INSUMO_PENDIENTE', referencia: id });
+  });
+  var recetasPorProducto = {};
+  recetas.forEach(function(r) {
+    var id = String(r.PRODUCTO_ID || '');
+    if (!recetasPorProducto[id]) recetasPorProducto[id] = [];
+    recetasPorProducto[id].push(r);
+  });
+  var listos = [];
+  var productosPendientes = [];
+  var vistosProductos = {};
+  productos.forEach(function(p) {
+    var id = String(p.PRODUCTO_ID || '');
+    var incidencias = [];
+    if (!id || vistosProductos[id]) incidencias.push('PRODUCTO_ID_INVALIDO');
+    vistosProductos[id] = true;
+    if (String(p.ACTIVO).toUpperCase() !== 'SI') incidencias.push('PRODUCTO_NO_VALIDADO');
+    var componentes = recetasPorProducto[id] || [];
+    if (!componentes.length) incidencias.push('RECETA_AUSENTE');
+    var rendimiento = componentes.length ? Number(componentes[0].RENDIMIENTO) : 0;
+    if (componentes.length && (!Number.isFinite(rendimiento) || rendimiento <= 0)) incidencias.push('RENDIMIENTO_INVALIDO');
+    componentes.forEach(function(c) {
+      var insumo = insumoPorId[String(c.INSUMO_ID || '')];
+      if (!insumo || !String(insumo.UNIDAD || '').trim() || String(insumo.UNIDAD) !== String(c.UNIDAD)) {
+        incidencias.push('INSUMO_O_UNIDAD_NO_VALIDADO');
+      }
+      if (!Number.isFinite(Number(c.CANTIDAD)) || Number(c.CANTIDAD) <= 0 ||
+          !Number.isFinite(Number(c.RENDIMIENTO)) || Number(c.RENDIMIENTO) !== rendimiento) {
+        incidencias.push('CANTIDAD_O_RENDIMIENTO_INCONSISTENTE');
+      }
+    });
+    if (incidencias.length) productosPendientes.push({ productoId: id, motivos: incidencias.filter(function(v,i,a) { return a.indexOf(v) === i; }) });
+    else listos.push(id);
+  });
+  // EVENTOS_STOCK todavía puede no existir: se crea únicamente al registrar la primera operación autorizada.
+  var propiedad = PropertiesService.getScriptProperties().getProperty('FLORA_SPREADSHEET_ID');
+  var libro = SpreadsheetApp.openById(propiedad);
+  var hojaEventos = libro.getSheetByName('EVENTOS_STOCK');
+  var eventos = hojaEventos ? FLORA_eventos_(hojaEventos) : [];
+  var tieneStockInicial = eventos.some(function(e) { return e.tipo === 'STOCK_INICIAL'; });
+  return { totalProductos: productos.length, totalInsumos: insumos.length, totalRecetas: recetas.length,
+    productosConRecetaValidada: listos, productosPendientes: productosPendientes,
+    problemasInsumos: problemas, stockInicialRegistrado: tieneStockInicial,
+    estado: productosPendientes.length || problemas.length || !tieneStockInicial ? 'PENDIENTE_VALIDACION' : 'CATALOGO_Y_STOCK_PREPARADOS',
+    aviso: 'Diagnóstico de solo lectura. No habilita producción ni confirma la exactitud de cantidades físicas.' };
+}
