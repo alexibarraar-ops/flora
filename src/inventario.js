@@ -31,7 +31,24 @@
       return {...item,estado:faltante>0?'FALTANTE':'SUFICIENTE',disponible:cantidad,faltante};
     });
   }
+  function consolidarListas(listas){
+    if(!Array.isArray(listas)||!listas.length)throw Error('Todavía no agregaste producciones');
+    const total=new Map();
+    for(const lista of listas){
+      if(!Array.isArray(lista)||!lista.length)throw Error('Producción sin ingredientes');
+      for(const item of lista){
+        if(!item.nombre||!item.unidad||typeof item.cantidad!=='number'||!Number.isFinite(item.cantidad)||item.cantidad<=0)throw Error('Ingrediente inválido');
+        const clave=item.nombre.trim().toLocaleLowerCase('es')+'|'+item.unidad;
+        for(const anterior of total.values()){
+          if(anterior.nombre.trim().toLocaleLowerCase('es')===item.nombre.trim().toLocaleLowerCase('es')&&anterior.unidad!==item.unidad)throw Error(`Unidades incompatibles para ${item.nombre}: ${anterior.unidad} y ${item.unidad}. Revisar receta antes de sumar.`);
+        }
+        if(total.has(clave))total.get(clave).cantidad=redondear(total.get(clave).cantidad+item.cantidad);
+        else total.set(clave,{nombre:item.nombre,cantidad:item.cantidad,unidad:item.unidad});
+      }
+    }
+    return [...total.values()];
+  }
   function listaCompras(evaluados){return evaluados.filter(x=>x.estado==='FALTANTE').map(x=>({nombre:x.nombre,cantidad:x.faltante,unidad:x.unidad}));}
-  const api={leerLista,evaluar,listaCompras};
+  const api={leerLista,consolidarListas,evaluar,listaCompras};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.FloraInventario=api;
 })(typeof globalThis==='object'?globalThis:this);
