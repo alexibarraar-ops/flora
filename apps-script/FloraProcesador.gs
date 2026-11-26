@@ -72,6 +72,30 @@ function FLORA_saldos_(eventos) {
   return stock;
 }
 
+/** Saldos por lote de productos terminados; conserva el vencimiento original. */
+function FLORA_lotesDisponibles_(eventos, productoId, fecha) {
+  var lotes = {};
+  eventos.forEach(function(e) {
+    (e.resultado.movimientos || []).forEach(function(m) {
+      if (m.tipo !== 'producto' || m.id !== productoId) return;
+      if (!m.loteId) throw new Error('Movimiento de producto sin lote');
+      var lote = lotes[m.loteId];
+      if (!lote) {
+        if (m.cantidad < 0) throw new Error('Salida de lote desconocido');
+        if (!m.vencimiento) throw new Error('Lote sin vencimiento');
+        lote = { loteId: m.loteId, vencimiento: m.vencimiento, saldo: 0 };
+        lotes[m.loteId] = lote;
+      }
+      if (m.vencimiento && m.vencimiento !== lote.vencimiento) throw new Error('Vencimiento de lote inconsistente');
+      lote.saldo = FLORA_redondear_(lote.saldo + m.cantidad);
+      if (lote.saldo < -1e-6) throw new Error('Stock negativo en lote ' + m.loteId);
+    });
+  });
+  return Object.keys(lotes).map(function(id) { return lotes[id]; })
+    .filter(function(l) { return l.saldo > 0 && l.vencimiento >= fecha; })
+    .sort(function(a,b) { return a.vencimiento.localeCompare(b.vencimiento) || a.loteId.localeCompare(b.loteId); });
+}
+
 /** Vista previa sin escrituras. Rechaza recetas no validadas. */
 function FLORA_calcularProduccion(orden) {
   if (!orden || typeof orden.productoId !== 'string') throw new Error('Producto obligatorio');
@@ -119,6 +143,9 @@ function FLORA_registrarProduccion(orden) {
     var eventos = FLORA_eventos_(hoja);
     var existente = eventos.filter(function(e) { return e.id === orden.requestId; })[0];
     if (existente) return { duplicada: true, resultado: existente.resultado };
+    if (eventos.some(function(e) { return (e.resultado.movimientos || []).some(function(m) {
+      return m.tipo === 'producto' && m.cantidad > 0 && m.loteId === orden.loteId;
+    }); })) throw new Error('El LOTE_ID ya existe');
     var plan = FLORA_calcularProduccion(orden);
     var saldos = FLORA_saldos_(eventos);
     var faltantes = plan.consumo.filter(function(c) { return (saldos['insumo:' + c.insumoId] || 0) < c.cantidad; });
@@ -177,3 +204,45 @@ function FLORA_registrarIngresoInsumos_(orden, tipo) {
 
 function FLORA_registrarStockInicial(orden) { return FLORA_registrarIngresoInsumos_(orden, 'STOCK_INICIAL'); }
 function FLORA_registrarIngresoCompra(orden) { return FLORA_registrarIngresoInsumos_(orden, 'INGRESO_COMPRA'); }
+
+/**
+ * Registra ventas de productos terminados con asignación FEFO de lotes aptos.
+ * No factura ni manda mensajes; el clienteId se conserva para integrar CRM.
+ */
+function FLORA_registrarVenta(orden) {
+  FLORA_validarRequest_(orden);
+  if (typeof orden.productoId !== 'string' || !orden.productoId) throw new Error('Producto obligatorio');
+  var cantidad = FLORA_numero_(orden.cantidad, 'Cantidad de venta');
+  if (!Number.isInteger(cantidad)) throw new Error('La venta requiere unidades enteras');
+  if (orden.clienteId != null && (typeof orden.clienteId !== 'string' || !orden.clienteId.trim())) {
+    throw new Error('Cliente inválido');
+  }
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('Procesador ocupado; reintentar con el mismo REQUEST_ID');
+  try {
+    var hoja = FLORA_asegurarEventos_();
+    var eventos = FLORA_eventos_(hoja);
+    var existente = eventos.filter(function(e) { return e.id === orden.requestId; })[0];
+    if (existente) return { duplicada: true, resultado: existente.resultado };
+    var producto = FLORA_filas_('PRODUCTOS').filter(function(p) { return p.PRODUCTO_ID === orden.productoId; })[0];
+    if (!producto) throw new Error('Producto inexistente');
+    var fecha = Utilities.formatDate(new Date(), 'America/Argentina/Buenos_Aires', 'yyyy-MM-dd');
+    var lotes = FLORA_lotesDisponibles_(eventos, orden.productoId, fecha);
+    var disponible = FLORA_redondear_(lotes.reduce(function(n,l) { return n + l.saldo; }, 0));
+    if (disponible < cantidad) return { registrada: false, motivo: 'STOCK_APTO_INSUFICIENTE', disponible: disponible, requerido: cantidad };
+    var restante = cantidad;
+    var movimientos = [];
+    lotes.forEach(function(l) {
+      if (restante <= 0) return;
+      var usado = Math.min(restante, l.saldo);
+      movimientos.push({ tipo: 'producto', id: orden.productoId, cantidad: -usado, loteId: l.loteId });
+      restante = FLORA_redondear_(restante - usado);
+    });
+    var resultado = { registrada: true, requestId: orden.requestId, productoId: orden.productoId, cantidad: cantidad, movimientos: movimientos };
+    hoja.appendRow([orden.requestId, fecha, 'VENTA', JSON.stringify({ productoId: orden.productoId, cantidad: cantidad, clienteId: orden.clienteId || '' }), JSON.stringify(resultado)]);
+    SpreadsheetApp.flush();
+    return resultado;
+  } finally {
+    lock.releaseLock();
+  }
+}
