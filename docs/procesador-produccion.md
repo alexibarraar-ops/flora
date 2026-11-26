@@ -10,6 +10,12 @@ El archivo `apps-script/FloraProcesador.gs` es un **prototipo de procesador** pa
 4. Bajo bloqueo del procesador, revisa duplicados, calcula cantidades y verifica existencias.
 5. Si hay stock suficiente, escribe un evento completo en una sola fila de `EVENTOS_STOCK`. Los saldos se reconstruyen desde esos eventos.
 
+### Catálogo y calculadora privados (solo lectura)
+
+- `FLORA_listarProductosCalculables()` devuelve los productos **elaborados** con `ACTIVO = SI` y receta matemáticamente consistente. Si un producto activo tiene un error, lo informa en `inconsistentes` y no lo ofrece en la lista calculable.
+- `FLORA_previsualizarProduccion({productoId,cantidad})` devuelve nombres, cantidades y unidades de ingredientes y envases a partir de las hojas oficiales. Reutiliza las validaciones de `FLORA_calcularProduccion`, sin cambiar inventario ni registrar eventos.
+- Estas consultas no se exponen en la PWA pública hasta tener autenticación y autorización vinculadas con Lucy. `calculadora.html` sigue usando únicamente fórmulas ficticias.
+
 ## Ingresos de stock (simulados)
 
 - `FLORA_registrarStockInicial`: agrega las cantidades reales contadas al comenzar, una sola vez. Cada insumo necesita unidad confirmada.
