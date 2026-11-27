@@ -43,7 +43,11 @@ function FLORA_registrarPedido(orden) {
   try {
     var datos = FLORA_pedidosEventos_();
     var anterior = datos.filas.filter(function(r) { return String(r[6]) === orden.requestId; })[0];
-    if (anterior) return {duplicada:true, registrada:true, pedidoId:String(anterior[2]), requestId:orden.requestId};
+    if (anterior) {
+      if (String(anterior[4]) !== 'ALTA_PEDIDO' || String(anterior[2]) !== pedido.pedidoId ||
+          JSON.stringify(JSON.parse(String(anterior[8]))) !== JSON.stringify(pedido)) throw new Error('REQUEST_ID reutilizado para otra operación');
+      return {duplicada:true, registrada:true, pedidoId:pedido.pedidoId, requestId:orden.requestId};
+    }
     if (datos.filas.some(function(r) { return String(r[2]) === pedido.pedidoId && String(r[4]) === 'ALTA_PEDIDO'; })) throw new Error('PEDIDO_ID ya existente');
     var fecha = Utilities.formatDate(new Date(), 'America/Argentina/Buenos_Aires', "yyyy-MM-dd'T'HH:mm:ss");
     datos.hoja.appendRow([orden.requestId,fecha,pedido.pedidoId,'','ALTA_PEDIDO','',orden.requestId,'',JSON.stringify(pedido)]);
@@ -55,17 +59,125 @@ function FLORA_registrarPedido(orden) {
   } finally { lock.releaseLock(); }
 }
 
+/** Reconstrucción determinista: el evento es la única fuente oficial. */
+function FLORA_reconstruirPedidos_(filas) {
+  var mapa = {}, orden = [];
+  filas.forEach(function(r) {
+    var id = String(r[2]), tipo = String(r[4]), dato = JSON.parse(String(r[8]));
+    if (tipo === 'ALTA_PEDIDO') {
+      if (mapa[id] || dato.pedidoId !== id) throw new Error('Alta de pedido inconsistente');
+      var p = JSON.parse(JSON.stringify(dato));
+      p.items.forEach(function(it) { it.entregada = 0; });
+      mapa[id] = p; orden.push(id);
+    } else {
+      var actual = mapa[id];
+      if (!actual) throw new Error('Evento sin pedido previo');
+      if (tipo === 'ESTADO_PEDIDO') {
+        if (actual.estado !== dato.desde || !FLORA_transicionPedido_(actual.estado,dato.estado)) throw new Error('Cambio de estado inconsistente');
+        actual.estado = dato.estado;
+      } else if (tipo === 'ENTREGA_PEDIDO') {
+        var item = actual.items[dato.itemIndex];
+        if (!item || !Number.isInteger(dato.cantidad) || dato.cantidad < 1 ||
+            item.entregada + dato.cantidad > item.cantidad ||
+            (actual.estado !== 'LISTO' && actual.estado !== 'PARCIAL')) throw new Error('Entrega inconsistente');
+        item.entregada += dato.cantidad;
+        var todo = actual.items.every(function(it) { return it.entregada === it.cantidad; });
+        actual.estado = todo ? 'ENTREGADO' : 'PARCIAL';
+      } else throw new Error('Tipo de evento desconocido');
+    }
+  });
+  return orden.map(function(id) { return mapa[id]; });
+}
+
+function FLORA_transicionPedido_(desde, hacia) {
+  return (desde === 'PENDIENTE' && (hacia === 'PRODUCCION' || hacia === 'CANCELADO')) ||
+    (desde === 'PRODUCCION' && (hacia === 'LISTO' || hacia === 'CANCELADO')) ||
+    (desde === 'LISTO' && hacia === 'CANCELADO');
+}
+
+function FLORA_guardarEventoPedido_(op, tipo, validar) {
+  FLORA_validarRequest_(op);
+  if (typeof op.pedidoId !== 'string' || !/^FLP-[A-Za-z0-9-]{4,40}$/.test(op.pedidoId)) throw new Error('PEDIDO_ID inválido');
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('Procesador ocupado; reintentar con el mismo REQUEST_ID');
+  try {
+    var datos = FLORA_pedidosEventos_();
+    var anterior = datos.filas.filter(function(r) { return String(r[6]) === op.requestId; })[0];
+    if (anterior) {
+      var viejo = JSON.parse(String(anterior[8]));
+      if (String(anterior[4]) !== tipo || String(anterior[2]) !== op.pedidoId ||
+          viejo.requestId !== op.requestId || viejo.pedidoId !== op.pedidoId ||
+          (tipo === 'ESTADO_PEDIDO' && viejo.estado !== op.estado) ||
+          (tipo === 'ENTREGA_PEDIDO' && (viejo.itemIndex !== op.itemIndex || viejo.cantidad !== op.cantidad))) {
+        throw new Error('REQUEST_ID reutilizado para otra operación');
+      }
+      return {registrada:true,duplicada:true,pedidoId:op.pedidoId,requestId:op.requestId,estado:viejo.resultado};
+    }
+    var pedidos = FLORA_reconstruirPedidos_(datos.filas);
+    var pedido = pedidos.filter(function(p) { return p.pedidoId === op.pedidoId; })[0];
+    if (!pedido) throw new Error('Pedido inexistente');
+    var evento = validar(op,pedido);
+    evento.pedidoId = op.pedidoId;
+    evento.requestId = op.requestId;
+    var fecha = Utilities.formatDate(new Date(), 'America/Argentina/Buenos_Aires', "yyyy-MM-dd'T'HH:mm:ss");
+    datos.hoja.appendRow([op.requestId,fecha,op.pedidoId,
+      tipo === 'ENTREGA_PEDIDO' ? String(op.itemIndex) : '',tipo,
+      tipo === 'ENTREGA_PEDIDO' ? op.cantidad : '',op.requestId,'',JSON.stringify(evento)]);
+    SpreadsheetApp.flush();
+    var guardados = FLORA_pedidosEventos_().filas.filter(function(r) { return String(r[6]) === op.requestId; });
+    if (guardados.length !== 1 || String(guardados[0][4]) !== tipo) throw new Error('No se pudo verificar el evento');
+    return {registrada:true,duplicada:false,pedidoId:op.pedidoId,requestId:op.requestId,estado:evento.resultado};
+  } finally { lock.releaseLock(); }
+}
+
+/** Cambia solo PENDIENTE→PRODUCCION→LISTO, o cancela antes de entregar. */
+function FLORA_cambiarEstadoPedido(op) {
+  return FLORA_guardarEventoPedido_(op,'ESTADO_PEDIDO',function(orden,pedido) {
+    if (!FLORA_transicionPedido_(pedido.estado,orden.estado)) throw new Error('Transición de estado no permitida');
+    return {desde:pedido.estado,estado:orden.estado,resultado:orden.estado};
+  });
+}
+
+/** Entrega parcial o total. No descuenta stock ni registra una venta. */
+function FLORA_registrarEntregaPedido(op) {
+  return FLORA_guardarEventoPedido_(op,'ENTREGA_PEDIDO',function(orden,pedido) {
+    var item = pedido.items[orden.itemIndex];
+    if ((pedido.estado !== 'LISTO' && pedido.estado !== 'PARCIAL') ||
+        !Number.isInteger(orden.itemIndex) || !item || !Number.isInteger(orden.cantidad) ||
+        orden.cantidad < 1 || orden.cantidad > item.cantidad - item.entregada) throw new Error('Entrega inválida o excedida');
+    var total = pedido.items.every(function(it,i) {return it.entregada + (i === orden.itemIndex ? orden.cantidad : 0) === it.cantidad;});
+    return {itemIndex:orden.itemIndex,cantidad:orden.cantidad,resultado:total ? 'ENTREGADO' : 'PARCIAL'};
+  });
+}
+
 /** Consulta privada desde los eventos oficiales; no modifica nada. */
 function FLORA_consultarPedidos() {
-  var filas = FLORA_pedidosEventos_().filas;
-  var pedidos = [];
-  filas.forEach(function(r) {
-    if (String(r[4]) !== 'ALTA_PEDIDO') return;
-    var p = JSON.parse(String(r[8]));
-    if (p.pedidoId !== String(r[2])) throw new Error('Evento de pedido inconsistente');
-    pedidos.push({pedidoId:p.pedidoId,clienteNombre:p.clienteNombre,clienteId:p.clienteId,
-      canal:p.canal,fechaEntrega:p.fechaEntrega,estado:p.estado,observaciones:p.observaciones,items:p.items});
+  var pedidos = FLORA_reconstruirPedidos_(FLORA_pedidosEventos_().filas);
+  return {pedidos:pedidos,cantidad:pedidos.length,modo:'SOLO_LECTURA'};
+}
+
+function FLORA_consultarPedidosPendientes() {
+  var pedidos = FLORA_consultarPedidos().pedidos.filter(function(p) {
+    return p.estado !== 'ENTREGADO' && p.estado !== 'CANCELADO';
   });
-  return {pedidos:pedidos,cantidad:pedidos.length,modo:'SOLO_LECTURA',
-    aviso:'Solo altas registradas. Cambios de estado y entregas todavía no están conectados.'};
+  return {pedidos:pedidos,cantidad:pedidos.length,modo:'SOLO_LECTURA'};
+}
+
+/** Ficha de producción tentativa: solo pedidos todavía PENDIENTES. */
+function FLORA_consultarProduccionAgrupada() {
+  var mapa = {}, grupos = [];
+  FLORA_consultarPedidosPendientes().pedidos.forEach(function(p) {
+    if (p.estado !== 'PENDIENTE') return;
+    p.items.forEach(function(item) {
+      var clave = JSON.stringify([item.productoId,item.variante]);
+      if (!mapa[clave]) {
+        mapa[clave] = {productoId:item.productoId,variante:item.variante,cantidad:0,pedidos:[]};
+        grupos.push(mapa[clave]);
+      }
+      mapa[clave].cantidad += item.cantidad - item.entregada;
+      if (mapa[clave].pedidos.indexOf(p.pedidoId) < 0) mapa[clave].pedidos.push(p.pedidoId);
+    });
+  });
+  return {grupos:grupos,cantidad:grupos.length,modo:'SOLO_LECTURA',
+    aviso:'Agrupado tentativo; no calcula recetas, insumos ni descuenta stock.'};
 }
