@@ -12,13 +12,27 @@
   }
   function cobrado(p){return p.pagos.reduce((n,x)=>n+x.importe,0);}
   function saldo(p){return p.total-cobrado(p);}
+  function cambiarEstado(p,estado){
+    if(p.rubro!=='PRODUCTO'||!((p.estado==='PENDIENTE'&&estado==='PRODUCCION')||(p.estado==='PRODUCCION'&&estado==='LISTO')))throw Error('Cambio de producción no permitido');
+    return {...p,estado};
+  }
+  function agruparProduccion(pedidos){
+    const grupos=new Map();
+    for(const p of pedidos){
+      if(p.rubro!=='PRODUCTO'||p.estado!=='PENDIENTE')continue;
+      const clave=p.concepto.trim().toLocaleLowerCase('es-AR');
+      if(!grupos.has(clave))grupos.set(clave,{concepto:p.concepto,cantidad:0,pedidos:[]});
+      const g=grupos.get(clave);g.cantidad+=p.cantidad-p.entregada;g.pedidos.push(p.id);
+    }
+    return [...grupos.values()];
+  }
   function cobrar(p,c){
     if(!entero(c.importe)||c.importe<1||c.importe>saldo(p))throw Error('El cobro debe ser positivo y no superar el saldo');
     if(!['EFECTIVO','TRANSFERENCIA','MERCADO_PAGO','OTRO'].includes(c.medio))throw Error('Medio de pago inválido');
     return {...p,pagos:[...p.pagos,{id:c.id,fecha:c.fecha,importe:c.importe,medio:c.medio}]};
   }
   function entregar(p,cantidad){
-    if(p.rubro!=='PRODUCTO'||!entero(cantidad)||cantidad<1||cantidad>p.cantidad-p.entregada)throw Error('Entrega inválida');
+    if(p.rubro!=='PRODUCTO'||!['LISTO','PARCIAL'].includes(p.estado)||!entero(cantidad)||cantidad<1||cantidad>p.cantidad-p.entregada)throw Error('Entrega inválida');
     const entregada=p.entregada+cantidad;
     return {...p,entregada,estado:entregada===p.cantidad?'ENTREGADO':'PARCIAL'};
   }
@@ -30,6 +44,6 @@
   }
   function moneda(n){return new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(n);}
   function comprobante(p){return ['🌿 *FLORA · RESUMEN DE PEDIDO*',`N.º: *${p.id}*`,`Fecha: ${p.fecha}`,`Cliente: ${p.cliente}`,`${p.concepto} · ${p.cantidad} × ${moneda(p.precio)}`,`*Total: ${moneda(p.total)}*`,`Cobrado: ${moneda(cobrado(p))}`,`*Saldo: ${moneda(saldo(p))}*`,p.vencimiento?`Pago previsto: ${p.vencimiento}`:'',p.rubro==='PRODUCTO'?`Entregadas: ${p.entregada}/${p.cantidad}`:'','Gracias por elegir Flora 🌸'].filter(Boolean).join('\n');}
-  const api={alta,cobrar,cobrado,saldo,entregar,cierre,comprobante,moneda};
+  const api={alta,cobrar,cobrado,saldo,cambiarEstado,agruparProduccion,entregar,cierre,comprobante,moneda};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.FloraVentas=api;
 })(typeof globalThis==='object'?globalThis:this);
