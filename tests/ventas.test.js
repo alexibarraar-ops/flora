@@ -1,0 +1,6 @@
+'use strict';const {test}=require('node:test'),assert=require('node:assert/strict'),v=require('../src/ventas');
+const o={id:'FLV-000001',fecha:'2026-11-27',cliente:'Mariana',concepto:'Shampoo verde',cantidad:2,precio:8000,rubro:'PRODUCTO'};
+test('pedido, pago parcial y entrega parcial son independientes',()=>{let p=v.alta(o);assert.equal(p.total,16000);p=v.cobrar(p,{id:'P1',fecha:o.fecha,importe:5000,medio:'TRANSFERENCIA'});assert.equal(v.saldo(p),11000);p=v.entregar(p,1);assert.equal(p.estado,'PARCIAL');assert.equal(v.saldo(p),11000);p=v.entregar(p,1);assert.equal(p.estado,'ENTREGADO');assert.equal(v.saldo(p),11000);});
+test('no duplica cobros como ventas y separa cobro histórico',()=>{const p=v.alta(o);const q=v.cobrar(p,{id:'P2',fecha:'2026-11-28',importe:16000,medio:'EFECTIVO'});const c=v.cierre([q],'2026-11-28');assert.equal(c.ventas,0);assert.equal(c.cobros,16000);assert.equal(c.cobrosAnteriores,16000);assert.equal(c.saldoTotal,0);});
+test('servicios no descuentan stock y no permiten entrega',()=>{const p=v.alta({...o,rubro:'SERVICIO',concepto:'Tarot'});assert.equal(p.estado,'NO_APLICA');assert.throws(()=>v.entregar(p,1),/inválida/);});
+test('rechaza cobro excedido y datos inválidos',()=>{const p=v.alta(o);assert.throws(()=>v.cobrar(p,{importe:16001,medio:'EFECTIVO'}),/superar/);assert.throws(()=>v.alta({...o,cantidad:0}),/inválido/);});
