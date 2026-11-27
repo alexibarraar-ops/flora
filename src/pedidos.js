@@ -32,6 +32,28 @@
     }
     return [...mapa.values()];
   }
-  const api={crearPedido,cambiarEstado,entregar,agruparPendientes,ESTADOS};
+  const CODIGOS={
+    'Jojoba Oil':'FL-001','Shampoo sólido rojo':'FL-002','Shampoo sólido verde':'FL-003',
+    'Shampoo sólido de arroz':'FL-004','Acondicionador sólido':'FL-005','Desodorante natural':'FL-006',
+    'Crema para peinar':'FL-007','Agua micelar':'FL-008','Tónico facial':'FL-009',
+    'Agua herbal de canela':'FL-010','Aqua Mirabilis':'FL-011','Bálsamo de caléndula':'FL-012',
+  };
+  function calcularPlan(pedidos,recetas){
+    if(!Array.isArray(recetas))throw Error('Las recetas no están cargadas');
+    const porId=new Map(recetas.map(r=>[r.id,r]));
+    const materiales=new Map(),sinReceta=[];
+    for(const pedido of agruparPendientes(pedidos)){
+      const id=CODIGOS[pedido.producto],receta=porId.get(id);
+      if(!receta||pedido.detalle){sinReceta.push({...pedido,motivo:pedido.detalle?'Pedido personalizado: revisar receta':'Receta sin cargar'});continue;}
+      for(const x of receta.ingredientes){
+        const clave=x.insumoId;
+        if(materiales.has(clave)&&materiales.get(clave).unidad!==x.unidad)throw Error(`Unidad incompatible en ${x.nombre}; revisar antes de continuar`);
+        if(!materiales.has(clave))materiales.set(clave,{insumoId:clave,nombre:x.nombre,unidad:x.unidad,cantidad:0});
+        const m=materiales.get(clave);m.cantidad=Math.round((m.cantidad+x.cantidad*pedido.cantidad)*10000)/10000;
+      }
+    }
+    return {materiales:[...materiales.values()],sinReceta};
+  }
+  const api={crearPedido,cambiarEstado,entregar,agruparPendientes,calcularPlan,CODIGOS,ESTADOS};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.FloraPedidos=api;
 })(typeof globalThis==='object'?globalThis:this);
