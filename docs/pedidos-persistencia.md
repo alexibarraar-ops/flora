@@ -4,9 +4,9 @@ La base `FLORA_OS_DB`, propiedad de Lucy, dispone de tres pestañas vacías:
 
 - `PEDIDOS`: cabecera, cliente, canal, fecha comprometida, estado y REQUEST_ID.
 - `PEDIDO_ITEMS`: líneas de un pedido, cantidad pedida y entregada, variante y estado.
-- `PEDIDO_EVENTOS`: historial de altas, cambios de estado y entregas parciales.
+- `PEDIDO_EVENTOS`: historial de altas, cambios de estado y entregas parciales; incluye `DATOS_JSON` para reconstruir las altas sin escrituras multihoja.
 
-`src/pedidos-persistencia.js` implementa la validación y preparación de un alta de varios artículos **sin escribir**. El código público no contiene pedidos reales ni datos personales de Lucy.
+`src/pedidos-persistencia.js` implementa la validación y preparación de un alta de varios artículos **sin escribir**. `apps-script/FloraPedidos.gs` prepara el registro confirmado como **un evento único** con `REQUEST_ID` idempotente, bloqueo y lectura de verificación. El código público no contiene pedidos reales ni datos personales de Lucy.
 
 ## Reglas de la futura conexión
 
@@ -17,4 +17,4 @@ La base `FLORA_OS_DB`, propiedad de Lucy, dispone de tres pestañas vacías:
 5. Los pedidos personalizados requieren aprobación de receta antes de entrar a producción automática.
 6. No usar `BORRADOR_RECETAS` para fabricar; solo las recetas validadas pasarán a `RECETAS` y se activarán.
 
-Estado actual: **esquema preparado, procesador no instalado, PWA sin persistencia real**.
+Estado actual: **esquema y procesador preparados y probados con datos ficticios; procesador no instalado, PWA sin persistencia real**. `PEDIDOS` y `PEDIDO_ITEMS` siguen vacías por diseño: el evento es la fuente oficial, y las vistas materiales se definirán antes del uso real.
